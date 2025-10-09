@@ -1,0 +1,5 @@
+{
+  "name": "BellezaSana Dashboard",
+  "description": "An administration panel for a beauty salon to manage appointments, clients, services, professionals, and promotions.",
+  "requestFramePermissions": []
+}
