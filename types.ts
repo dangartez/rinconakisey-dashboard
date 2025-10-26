@@ -31,6 +31,7 @@ export interface Client {
   created_at: string;
   nickname: string;
   claim_code?: string;
+  has_debt?: boolean;
 }
 
 export interface Appointment {
@@ -136,4 +137,16 @@ export interface ScheduleOverride {
   is_working: boolean;
   start_time: string | null;
   end_time: string | null;
+}
+
+export interface PendingAppointment {
+  id: string;
+  start_time: string;
+  service_id: number;
+  service_name: string;
+  price: number;
+  professional_id: string;
+  professional_name: string;
+  client_id: string;
+  client_name: string;
 }

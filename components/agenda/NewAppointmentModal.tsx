@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Client, Service, Professional } from '../../types';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Appointment, Client, Service, Professional } from '../../types';
 import { supabase } from '../../lib/supabaseClient';
+import AppointmentTimeSelector from './AppointmentTimeSelector';
+import { ComputedSlot, TimeSlot } from './AppointmentTimeSelector';
 
 const formatDate = (date: Date): string => {
     const year = date.getFullYear();
@@ -14,10 +16,9 @@ interface NewAppointmentModalProps {
   onClose: () => void;
   onSave: (data: {
       client: Client;
-      service: Service;
-      professionalId: string;
-      date: string;
-      startTime: string;
+      services: Service[];
+      professional: Professional;
+      startTime: Date;
   }) => void;
   clients: Client[];
   services: Service[];
@@ -25,75 +26,67 @@ interface NewAppointmentModalProps {
 }
 
 const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({ isOpen, onClose, onSave, clients, services, professionals }) => {
-    const [step, setStep] = useState(1);
-    const [error, setError] = useState('');
-
-    // Step 1 state
-    const [clientSearch, setClientSearch] = useState('');
-    const [serviceSearch, setServiceSearch] = useState('');
+    // Main form state
+    const [selectedProfessional, setSelectedProfessional] = useState<Professional | null>(professionals[0] || null);
+    const [status, setStatus] = useState<Appointment['status']>('Confirmada');
     const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-    const [selectedService, setSelectedService] = useState<Service | null>(null);
-
-    // Step 2 state
-    const [selectedProfessionalId, setSelectedProfessionalId] = useState<string>('any');
-    const [date, setDate] = useState('');
-    const [availableSlots, setAvailableSlots] = useState<{time: string, professional_id: string}[]>([]);
+    const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
     const [selectedSlot, setSelectedSlot] = useState<{time: string, professional_id: string} | null>(null);
-    const [isLoadingSlots, setIsLoadingSlots] = useState(false);
-    
-    // Autocomplete state
-    const [clientResults, setClientResults] = useState<Client[]>([]);
-    const [serviceResults, setServiceResults] = useState<Service[]>([]);
-    const [showClientResults, setShowClientResults] = useState(false);
-    const [showServiceResults, setShowServiceResults] = useState(false);
+    const [date, setDate] = useState(formatDate(new Date()));
+    const [error, setError] = useState('');
+    const [serviceSearch, setServiceSearch] = useState('');
 
+    // Client search state
+    const [clientSearch, setClientSearch] = useState('');
+    const [clientResults, setClientResults] = useState<Client[]>([]);
+    const [showClientResults, setShowClientResults] = useState(false);
     const clientInputRef = useRef<HTMLDivElement>(null);
-    const serviceInputRef = useRef<HTMLDivElement>(null);
-    
-    // Reset state on close
+
+    // State for the time selector logic
+    const [selectedDate, setSelectedDate] = useState(new Date());
+    const [weekOffset, setWeekOffset] = useState(0);
+    const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+    const [computedSlots, setComputedSlots] = useState<ComputedSlot[]>([]);
+    const [workSchedule, setWorkSchedule] = useState<{ start_time: string; end_time: string; is_working: boolean } | null>(null);
+    const [dateTimeView, setDateTimeView] = useState<'calendar' | 'byHour'>('calendar');
+    const [rangeSlots, setRangeSlots] = useState<any[]>([]);
+    const [isLoadingRange, setIsLoadingRange] = useState(false);
+    const [filterStartTime, setFilterStartTime] = useState('08:00');
+    const [filterEndTime, setFilterEndTime] = useState('21:00');
+    const [isSlotsModalOpen, setIsSlotsModalOpen] = useState(false);
+
+    // --- EFFECTS ---
+    // Reset state when modal closes
     useEffect(() => {
         if (!isOpen) {
-            setTimeout(() => {
-                setStep(1);
-                setClientSearch('');
-                setServiceSearch('');
-                setSelectedClient(null);
-                setSelectedService(null);
-                setSelectedProfessionalId('any');
-                setDate('');
-                setAvailableSlots([]);
-                setSelectedSlot(null);
-                setError('');
-            }, 200);
-        } else {
-            const today = new Date();
-            setDate(formatDate(today));
+            // Reset all state variables to their initial values
+            setSelectedProfessional(professionals[0] || null);
+            setStatus('Confirmada');
+            setSelectedClient(null);
+            setSelectedServiceIds([]);
+            setSelectedSlot(null);
+            setDate(formatDate(new Date()));
+            setError('');
+            setServiceSearch('');
+            setClientSearch('');
+            setClientResults([]);
+            setShowClientResults(false);
+            setSelectedDate(new Date());
+            setWeekOffset(0);
+            setIsLoadingSlots(false);
+            setComputedSlots([]);
+            setWorkSchedule(null);
+            setDateTimeView('calendar');
+            setRangeSlots([]);
+            setIsLoadingRange(false);
+            setFilterStartTime('08:00');
+            setFilterEndTime('21:00');
+            setIsSlotsModalOpen(false);
         }
-    }, [isOpen]);
+    }, [isOpen, professionals]);
 
-    // Fetch available slots when dependencies change
-    useEffect(() => {
-        if (step === 2 && date && selectedService) {
-            const fetchSlots = async () => {
-                setIsLoadingSlots(true);
-                setSelectedSlot(null);
-                const { data, error } = await supabase.rpc('get_available_slots', {
-                    p_service_id: selectedService.id,
-                    p_date: date,
-                    p_professional_id: selectedProfessionalId === 'any' ? null : selectedProfessionalId
-                });
 
-                if (error) {
-                    console.error('Error fetching slots:', error);
-                    setAvailableSlots([]);
-                } else {
-                    setAvailableSlots(data.map((s: any) => ({ time: s.slot_time.slice(0, 5), professional_id: s.professional_id })));
-                }
-                setIsLoadingSlots(false);
-            };
-            fetchSlots();
-        }
-    }, [step, date, selectedService, selectedProfessionalId]);
+    const selectedServiceObjects = useMemo(() => services.filter(s => selectedServiceIds.includes(s.id)).sort((a, b) => a.name.localeCompare(b.name)), [selectedServiceIds, services]);
 
     useEffect(() => {
         if (clientSearch.trim().length > 0) {
@@ -108,21 +101,10 @@ const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({ isOpen, onClo
             setShowClientResults(false);
         }
     }, [clientSearch, clients]);
-
-    useEffect(() => {
-        if (serviceSearch.trim().length > 0) {
-            const results = services.filter(s => s.name.toLowerCase().includes(serviceSearch.toLowerCase()));
-            setServiceResults(results);
-            setShowServiceResults(true);
-        } else {
-            setShowServiceResults(false);
-        }
-    }, [serviceSearch, services]);
     
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (clientInputRef.current && !clientInputRef.current.contains(event.target as Node)) setShowClientResults(false);
-            if (serviceInputRef.current && !serviceInputRef.current.contains(event.target as Node)) setShowServiceResults(false);
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -134,152 +116,235 @@ const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({ isOpen, onClo
         setShowClientResults(false);
     };
 
-    const handleSelectService = (service: Service) => {
-        setSelectedService(service);
-        setServiceSearch(service.name);
-        setShowServiceResults(false);
-    };
-
-    const handleNextStep = () => {
-        if (selectedClient && selectedService) setStep(2);
-    };
-    
-    const handleSave = () => {
-        if (!selectedSlot) {
-            setError("Debes seleccionar un hueco disponible.");
+    useEffect(() => {
+        const selectedServiceObjects = services.filter(s => selectedServiceIds.includes(s.id));
+        if (!isOpen || selectedServiceObjects.length === 0 || dateTimeView !== 'calendar' || !selectedProfessional) {
+            setComputedSlots([]);
+            setWorkSchedule(null);
             return;
         }
-        if (selectedClient && selectedService) {
-            setError('');
-            onSave({ 
-                client: selectedClient, 
-                service: selectedService, 
-                professionalId: selectedSlot.professional_id, 
-                date, 
-                startTime: selectedSlot.time 
-            });
-        }
-    }
 
+        const fetchAndComputeSlots = async () => {
+            setIsLoadingSlots(true);
+            setComputedSlots([]);
+            const dateString = formatDate(selectedDate);
+            const appointmentIdsToIgnore: string[] = [];
+
+            // 1. Get workday bounds
+            const { data: scheduleData, error: scheduleError } = await supabase.rpc('get_professional_workday_bounds', { 
+                p_professional_id: selectedProfessional.id, 
+                p_date: dateString 
+            });
+
+            if (scheduleError || !scheduleData || scheduleData.length === 0 || !scheduleData[0].is_working) {
+                setWorkSchedule(scheduleData ? scheduleData[0] : null);
+                setIsLoadingSlots(false);
+                return;
+            }
+            
+            const { earliest_start_time, latest_end_time } = scheduleData[0];
+            setWorkSchedule(scheduleData[0]);
+
+            // 2. Get available slots
+            const { data: availableSlotsData, error: slotsError } = await supabase.rpc('get_available_slots_for_multiple_services_for_range', {
+                p_professional_id: selectedProfessional.id,
+                p_service_ids: selectedServiceIds,
+                p_start_date: dateString,
+                p_end_date: dateString,
+                p_appointment_ids_to_ignore: appointmentIdsToIgnore
+            });
+
+            let fetchedSlots: TimeSlot[] = [];
+            if (slotsError) {
+                console.error('Error fetching slots:', slotsError);
+            } else {
+                fetchedSlots = (availableSlotsData || []).map((s: any) => {
+                    const slotDate = new Date(s.slot_timestamp);
+                    const hours = slotDate.getHours().toString().padStart(2, '0');
+                    const minutes = slotDate.getMinutes().toString().padStart(2, '0');
+                    return { time: `${hours}:${minutes}`, professional_id: s.professional_id };
+                });
+            }
+
+
+
+            // 4. Generate all possible slots for the day
+            const allDaySlots: string[] = [];
+            const baseDate = formatDate(selectedDate);
+            let current = new Date(`${baseDate}T${earliest_start_time}`);
+            const end = new Date(`${baseDate}T${latest_end_time}`);
+            while (current < end) {
+                allDaySlots.push(current.toTimeString().slice(0, 5));
+                current.setMinutes(current.getMinutes() + 15);
+            }
+
+            // 5. Compute the final slot list
+            const availableSlotMap = new Map<string, string>();
+            fetchedSlots.forEach(s => availableSlotMap.set(s.time, s.professional_id));
+
+            const finalComputedSlots = allDaySlots.map(slotTime => {
+                const professionalId = availableSlotMap.get(slotTime);
+                return {
+                    time: slotTime,
+                    isAvailable: !!professionalId,
+                    professionalId: professionalId || ''
+                };
+            });
+
+            setComputedSlots(finalComputedSlots);
+            setIsLoadingSlots(false);
+        };
+
+        fetchAndComputeSlots();
+    }, [isOpen, selectedDate, selectedProfessional, selectedServiceIds, dateTimeView, services]);
+
+    // --- HANDLERS & MEMOS ---
+    const handleServiceToggle = (serviceId: number) => setSelectedServiceIds(prev => prev.includes(serviceId) ? prev.filter(id => id !== serviceId) : [...prev, serviceId]);
+    const filteredAvailableServices = useMemo(() => {
+        if (!serviceSearch.trim()) return services.sort((a,b) => a.name.localeCompare(b.name));
+        return services.filter(s => s.name.toLowerCase().includes(serviceSearch.toLowerCase())).sort((a,b) => a.name.localeCompare(b.name));
+    }, [serviceSearch, services]);
+
+    const handleDateTimeSelected = (selectedDate: Date, time: string, professionalId: string) => {
+        setDate(formatDate(selectedDate));
+        setSelectedSlot({ time, professional_id: professionalId });
+    };
+    
+    const handleSearchByHour = async () => {
+        if (selectedServiceObjects.length === 0) return;
+        setIsLoadingRange(true);
+        setIsSlotsModalOpen(true);
+        const startDate = new Date();
+        const endDate = new Date();
+        endDate.setDate(startDate.getDate() + 30);
+        const appointmentIdsToIgnore: string[] = [];
+
+        const { data, error } = await supabase.rpc('get_available_slots_for_multiple_services_for_range', {
+            p_service_ids: selectedServiceIds,
+            p_professional_id: selectedProfessional?.id || null,
+            p_start_date: formatDate(startDate),
+            p_end_date: formatDate(endDate),
+            p_appointment_ids_to_ignore: appointmentIdsToIgnore
+        });
+
+        if (error) {
+            setRangeSlots([]);
+        } else {
+            setRangeSlots(data || []);
+        }
+        setIsLoadingRange(false);
+    };
+
+    const groupedRangeSlots = useMemo(() => {
+        const groups: { [key: string]: { time: string; professional_id: string }[] } = {};
+        if (!rangeSlots) return {};
+        const filtered = rangeSlots.filter(slot => {
+            const slotTime = new Date(slot.slot_timestamp).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+            return slotTime >= filterStartTime && slotTime <= filterEndTime;
+        });
+        filtered.forEach(slot => {
+            const date = new Date(slot.slot_timestamp);
+            const dateString = formatDate(date);
+            if (!groups[dateString]) groups[dateString] = [];
+            groups[dateString].push({ time: date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }), professional_id: slot.professional_id });
+        });
+        return groups;
+    }, [rangeSlots, filterStartTime, filterEndTime]);
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedClient || !selectedProfessional || !date || !selectedSlot) {
+            setError('Todos los campos y la selección de hora son obligatorios.');
+            return;
+        }
+        const [hours, minutes] = selectedSlot.time.split(':').map(Number);
+        const newStartDate = new Date(date);
+        newStartDate.setHours(hours, minutes, 0, 0);
+        
+        setError('');
+        onSave({
+            client: selectedClient,
+            services: selectedServiceObjects,
+            professional: selectedProfessional,
+            startTime: newStartDate,
+        });
+    };
+
+    // --- RENDER ---
     if (!isOpen) return null;
 
-    const isStep1NextEnabled = selectedClient && selectedService;
-    const isSaveEnabled = step === 2 && date && selectedSlot && selectedClient && selectedService;
-
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4 animate-fadeIn" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="modal-title">
-            <div 
-                className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl transform transition-all duration-300 animate-scaleUp"
-                onClick={(e) => e.stopPropagation()}
-            >
-                <div className="p-8">
-                    <h2 id="modal-title" className="text-3xl font-bold text-gray-900 mb-2">Nueva Cita</h2>
-                    
-                    {step === 1 && (
-                        <div>
-                            <h3 className="text-lg font-semibold text-gray-800 mb-6">Paso 1: Cliente y Servicio</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div ref={clientInputRef} className="relative">
-                                    <label htmlFor="client-search" className="block text-sm font-medium text-gray-700 mb-1">Buscar Cliente</label>
-                                    <input type="text" id="client-search" placeholder="Nombre, teléfono, apodo..." className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 bg-white" value={clientSearch} onChange={(e) => { setClientSearch(e.target.value); setSelectedClient(null); }} onFocus={() => clientSearch.length > 0 && setShowClientResults(true)} autoComplete="off" />
-                                    {showClientResults && clientResults.length > 0 && (
-                                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                                            {clientResults.map(client => (
-                                                <div key={client.id} onClick={() => handleSelectClient(client)} className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm">
-                                                    <p className="font-medium">{client.name}</p>
-                                                    <p className="text-xs text-gray-500">{client.phone}</p>
-                                                </div>
+        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4 animate-fadeIn" onClick={onClose}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl transform transition-all duration-300 animate-scaleUp max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+                    <div className="p-8 overflow-y-auto min-h-0">
+                        <h2 id="modal-title" className="text-3xl font-bold text-gray-900 mb-8">Nueva Cita</h2>
+                        <div className="space-y-6">
+                            <div ref={clientInputRef} className="relative">
+                                <label htmlFor="client-search" className="block text-sm font-medium text-gray-700 mb-1">Buscar Cliente</label>
+                                <input type="text" id="client-search" placeholder="Nombre, teléfono, apodo..." className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 bg-white" value={clientSearch} onChange={(e) => { setClientSearch(e.target.value); setSelectedClient(null); }} onFocus={() => clientSearch.length > 0 && setShowClientResults(true)} autoComplete="off" />
+                                {showClientResults && clientResults.length > 0 && (
+                                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                        {clientResults.map(client => (
+                                            <div key={client.id} onClick={() => handleSelectClient(client)} className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm">
+                                                <p className="font-medium">{client.name}</p>
+                                                <p className="text-xs text-gray-500">{client.phone}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-semibold text-gray-800 mb-2">Servicios Asignados</h3>
+                                <div className="flex items-center space-x-2 mb-3">
+                                    <input type="text" placeholder="Buscar servicio..." value={serviceSearch} onChange={(e) => setServiceSearch(e.target.value)} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-sm"/>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4 flex-1">
+                                    <div>
+                                        <h4 className="font-semibold text-gray-600 text-sm mb-2">Disponibles ({filteredAvailableServices.length})</h4>
+                                        <div className="border border-gray-200 rounded-lg bg-white h-full overflow-y-auto p-2 space-y-1">
+                                            {filteredAvailableServices.map(service => (
+                                                <button key={service.id} type="button" onClick={() => handleServiceToggle(service.id)} disabled={selectedServiceIds.includes(service.id)} className="w-full text-left p-2 rounded text-sm transition-colors text-gray-800 disabled:bg-pink-50 disabled:text-pink-700 disabled:font-medium disabled:cursor-default hover:bg-gray-50">{service.name}</button>
                                             ))}
                                         </div>
-                                    )}
-                                </div>
-                                <div ref={serviceInputRef} className="relative">
-                                    <label htmlFor="service-search" className="block text-sm font-medium text-gray-700 mb-1">Buscar Servicio</label>
-                                    <input type="text" id="service-search" placeholder="Nombre del servicio..." className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 bg-white" value={serviceSearch} onChange={(e) => { setServiceSearch(e.target.value); setSelectedService(null); }} onFocus={() => serviceSearch.length > 0 && setShowServiceResults(true)} autoComplete="off" />
-                                     {showServiceResults && serviceResults.length > 0 && (
-                                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                                            {serviceResults.map(service => (
-                                                <div key={service.id} onClick={() => handleSelectService(service)} className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm">
-                                                    <p className="font-medium">{service.name}</p>
-                                                     <p className="text-xs text-gray-500">{service.duration} min - {service.price}€</p>
+                                    </div>
+                                    <div>
+                                        <h4 className="font-semibold text-gray-600 text-sm mb-2">Seleccionados ({selectedServiceObjects.length})</h4>
+                                        <div className="border border-gray-200 rounded-lg bg-white h-full overflow-y-auto p-2 space-y-1">
+                                            {selectedServiceObjects.length > 0 ? selectedServiceObjects.map(service => (
+                                                <div key={service.id} className="flex items-center justify-between p-2 rounded bg-white text-sm text-gray-800 border border-gray-100">
+                                                    <span className="font-medium">{service.name}</span>
+                                                    <button type="button" onClick={() => handleServiceToggle(service.id)} className="text-gray-400 hover:text-red-500 p-1" aria-label={`Quitar ${service.name}`}><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
                                                 </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                            <div className="mt-8 flex justify-end">
-                                <button onClick={handleNextStep} disabled={!isStep1NextEnabled} className="px-6 py-2 bg-pink-600 text-white font-semibold rounded-lg shadow-md hover:bg-pink-700 focus:outline-none focus:ring-2 focus:ring-pink-400 focus:ring-opacity-75 disabled:bg-pink-300 disabled:cursor-not-allowed transition-colors">
-                                    Siguiente
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {step === 2 && (
-                         <div>
-                            <h3 className="text-lg font-semibold text-gray-800 mb-6">Paso 2: Profesional y Fecha</h3>
-                             <div className="space-y-6">
-                                <div>
-                                    <label htmlFor="professional-select" className="block text-sm font-medium text-gray-700 mb-1">Profesional</label>
-                                    <div className="relative">
-                                        <select id="professional-select" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 bg-white appearance-none" value={selectedProfessionalId} onChange={(e) => setSelectedProfessionalId(e.target.value)}>
-                                            <option value="any">Cualquiera</option>
-                                            {/* Filter professionals who can perform the selected service */}
-                                            {professionals
-                                                .filter(p => selectedService?.id && p.assignedServices?.includes(selectedService.id))
-                                                .map(pro => ( <option key={pro.id} value={pro.id}>{pro.name}</option> ))}
-                                        </select>
-                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                                            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                                            )) : <div className="flex items-center justify-center h-full text-center text-sm text-gray-400 p-4"><p>Selecciona servicios de la lista de disponibles.</p></div>}
                                         </div>
                                     </div>
                                 </div>
-                                <div>
-                                    <label htmlFor="appointment-date" className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
-                                    <input type="date" id="appointment-date" value={date} onChange={e => setDate(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 bg-white" />
-                                </div>
-                                
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Hora</label>
-                                    {isLoadingSlots ? (
-                                        <div className="text-center p-4">Buscando huecos...</div>
-                                    ) : availableSlots.length > 0 ? (
-                                        <div className="grid grid-cols-4 gap-2">
-                                            {availableSlots.map(slot => (
-                                                <button 
-                                                    key={slot.time}
-                                                    type="button"
-                                                    onClick={() => setSelectedSlot(slot)}
-                                                    className={`px-3 py-2 text-sm rounded-lg transition-colors ${selectedSlot?.time === slot.time ? 'bg-pink-600 text-white' : 'bg-gray-100 hover:bg-pink-100'}`}>
-                                                    {slot.time}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <div className="text-center p-4 text-gray-500">No hay huecos disponibles para este día/profesional.</div>
-                                    )}
-                                </div>
-
-                                {error && <p className="text-red-500 text-sm">{error}</p>}
-                             </div>
-                             <div className="mt-8 flex justify-between">
-                                <button onClick={() => setStep(1)} className="px-6 py-2 text-gray-700 font-semibold rounded-lg hover:bg-gray-100 transition-colors">
-                                    Anterior
-                                </button>
                             </div>
-                         </div>
-                    )}
-                </div>
-                
-                <div className="bg-gray-50 px-8 py-4 rounded-b-2xl flex justify-end items-center space-x-3">
-                    <button onClick={onClose} className="px-5 py-2 text-sm font-semibold text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors">
-                        Cancelar
-                    </button>
-                    <button onClick={handleSave} className="px-5 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:bg-green-300 disabled:cursor-not-allowed transition-colors" disabled={!isSaveEnabled}>
-                        Guardar
-                    </button>
-                </div>
+                            <div>
+                                <label htmlFor="professional-select" className="block text-sm font-medium text-gray-700 mb-1">Profesional</label>
+                                <select id="professional-select" value={selectedProfessional?.id || ''} onChange={e => setSelectedProfessional(professionals.find(p => p.id === e.target.value)!)} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500">{professionals.map(pro => <option key={pro.id} value={pro.id}>{pro.name}</option>)}</select>
+                            </div>
+                            <AppointmentTimeSelector services={selectedServiceObjects} professional={selectedProfessional} onDateTimeSelected={handleDateTimeSelected} allProfessionals={professionals} onProfessionalSelected={setSelectedProfessional} dateTimeView={dateTimeView} setDateTimeView={setDateTimeView} selectedDate={selectedDate} setSelectedDate={setSelectedDate} weekOffset={weekOffset} setWeekOffset={setWeekOffset} isLoadingSlots={isLoadingSlots} computedSlots={computedSlots} workSchedule={workSchedule} isSlotsModalOpen={isSlotsModalOpen} setIsSlotsModalOpen={setIsSlotsModalOpen} groupedRangeSlots={groupedRangeSlots} isLoadingRange={isLoadingRange} filterStartTime={filterStartTime} setFilterStartTime={setFilterStartTime} filterEndTime={filterEndTime} setFilterEndTime={setFilterEndTime} handleSearchByHour={handleSearchByHour} />
+                            {selectedSlot && date && (
+                                <div className="mt-4 p-3 bg-pink-50 border border-pink-200 rounded-lg text-center">
+                                    <p className="font-semibold text-pink-800">
+                                        Nueva Hora Seleccionada: <span className="text-lg font-bold">{new Date(date.replace(/-/g, '/')).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })} a las {selectedSlot.time}</span>
+                                    </p>
+                                </div>
+                            )}
+                            <div>
+                                <label htmlFor="status-select" className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+                                <select id="status-select" value={status} onChange={e => setStatus(e.target.value as Appointment['status'])} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500"><option value="Confirmada">Confirmada</option><option value="Completada">Completada</option><option value="Cancelada">Cancelada</option></select>
+                            </div>
+                            {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+                        </div>
+                    </div>
+                    <div className="bg-gray-50 px-8 py-4 mt-auto rounded-b-2xl flex justify-end items-center space-x-3 border-t">
+                        <button type="button" onClick={onClose} className="px-5 py-2 text-sm font-semibold text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors">Cancelar</button>
+                        <button type="submit" className="px-5 py-2 text-sm font-semibold text-white bg-pink-600 rounded-lg hover:bg-pink-700 transition-colors">Crear Cita</button>
+                    </div>
+                </form>
             </div>
         </div>
     );

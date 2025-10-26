@@ -34,8 +34,8 @@ const ClientSelector: React.FC<ClientSelectorProps> = ({ onClientSelect }) => {
         const fetchClients = async () => {
             setIsLoading(true);
             const { data, error } = await supabase
-                .from('clients')
-                .select('id, full_name, phone, email')
+                .from('clients_with_debt_status')
+                .select('id, full_name, phone, email, has_debt')
                 .or(`full_name.ilike.%${searchTerm}%,phone.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`)
                 .limit(10);
 
@@ -43,7 +43,6 @@ const ClientSelector: React.FC<ClientSelectorProps> = ({ onClientSelect }) => {
                 console.error('Error fetching clients:', error);
                 setResults([]);
             } else {
-                // Map db result to Client type
                 const mappedData = data.map(c => ({ ...c, name: c.full_name })) as Client[];
                 setResults(mappedData);
                 setShowResults(true);
@@ -92,8 +91,8 @@ const ClientSelector: React.FC<ClientSelectorProps> = ({ onClientSelect }) => {
                             <li 
                                 key={client.id}
                                 onClick={() => handleSelect(client)}
-                                className="flex items-center p-3 hover:bg-gray-100 cursor-pointer"
-                            >
+                                className={`flex items-center p-3 cursor-pointer ${client.has_debt ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-100'}`}>
+
                                 <UserCircleIcon className="h-8 w-8 text-gray-400 mr-3 flex-shrink-0" />
                                 <div>
                                     <p className="font-medium text-gray-800">{client.name}</p>

@@ -13,7 +13,7 @@ interface ProfessionalAgendaModalProps {
 }
 
 const statusColors: Record<Appointment['status'], string> = {
-    'Pendiente': 'bg-blue-100 text-blue-800',
+    'Confirmada': 'bg-blue-100 text-blue-800',
     'Completada': 'bg-green-100 text-green-800',
     'Cancelada': 'bg-red-100 text-red-800',
 };
@@ -119,7 +119,7 @@ const ProfessionalAgendaModal: React.FC<ProfessionalAgendaModalProps> = ({
                             <label htmlFor="status" className="block font-medium text-gray-600 mb-1">Estado</label>
                             <select name="status" id="status" value={filters.status} onChange={handleFilterChange} className="w-full bg-white p-2 border border-gray-300 rounded-md focus:ring-pink-500 focus:border-pink-500">
                                 <option>Todas</option>
-                                <option>Pendiente</option>
+                                <option>Confirmada</option>
                                 <option>Completada</option>
                                 <option>Cancelada</option>
                             </select>

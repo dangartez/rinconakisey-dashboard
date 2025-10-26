@@ -1,15 +1,21 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import PageHeader from '../components/ui/PageHeader';
 import ClientSelector from '../components/tpv/ClientSelector';
-import PendingAppointments, { PendingAppointment } from '../components/tpv/PendingAppointments';
+import PastAppointments from '../components/tpv/PastAppointments';
+import FutureAppointments from '../components/tpv/FutureAppointments';
+
 import ServiceSelector from '../components/tpv/ServiceSelector';
 import ProfessionalSelectorModal from '../components/tpv/ProfessionalSelectorModal';
 import PaymentModal from '../components/tpv/PaymentModal';
 import PaymentTypeModal from '../components/tpv/PaymentTypeModal';
 import AllPendingAppointments from '../components/tpv/AllPendingAppointments';
-import TpvEditAppointmentModal from '../components/tpv/TpvEditAppointmentModal'; // Import new modal
-import { Client, Service, Professional, Appointment } from '../types';
+import TpvEditAppointmentModal from '../components/tpv/TpvEditAppointmentModal';
+import { ChevronDownIcon } from '../components/icons/Icons';
+import AddNotePromptModal from '../components/tpv/AddNotePromptModal';
+import AddServiceNoteModal from '../components/tpv/AddServiceNoteModal';
+import { Client, Service, Professional, Appointment, PendingAppointment } from '../types';
 import { supabase } from '../lib/supabaseClient';
+import { showSuccessToast, showErrorToast } from '../components/ui/CustomToast';
 
 // --- TYPES ---
 export interface TicketItem {
@@ -27,6 +33,16 @@ export interface TicketItem {
 export interface GeneralDiscount {
     type: 'percentage' | 'fixed';
     value: number;
+}
+
+interface SaleItemInfo {
+    id: number;
+    service_name: string;
+}
+  
+interface CompletedSaleData {
+    sale_id: string;
+    sale_items: SaleItemInfo[];
 }
 
 // --- COMPONENTS ---
@@ -117,11 +133,16 @@ const TpvPage: React.FC = () => {
     const [isPaymentTypeModalOpen, setIsPaymentTypeModalOpen] = useState(false);
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [isNotePromptModalOpen, setIsNotePromptModalOpen] = useState(false);
+    const [isAddNoteModalOpen, setIsAddNoteModalOpen] = useState(false);
     
     const [paymentType, setPaymentType] = useState<'completo' | 'aplazado'>('completo');
     const [serviceToAdd, setServiceToAdd] = useState<Service | null>(null);
     const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
     const [cashierId, setCashierId] = useState<string>('228dc81f-3fab-47ba-9d7a-27ae0e4854f0'); // Hardcoded for now
+    const [completedSaleData, setCompletedSaleData] = useState<CompletedSaleData | null>(null);
+
+    const [pendingAppointments, setPendingAppointments] = useState<PendingAppointment[]>([]);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -129,7 +150,7 @@ const TpvPage: React.FC = () => {
             if (professionalsError) console.error("Error fetching professionals", professionalsError);
             else setProfessionals(professionalsData as Professional[]);
 
-            const { data: clientsData, error: clientsError } = await supabase.from('clients').select('*, name:full_name');
+            const { data: clientsData, error: clientsError } = await supabase.from('clients_with_debt_status').select('*');
             if (clientsError) console.error("Error fetching clients", clientsError);
             else setClients(clientsData as Client[]);
 
@@ -139,6 +160,28 @@ const TpvPage: React.FC = () => {
         };
         fetchData();
     }, []);
+
+    const handleClientSelect = async (client: Client) => {
+        setTicketItems([]);
+        setSelectedClient(client);
+        
+        const { data, error } = await supabase.rpc('get_all_pending_appointments');
+
+        if (error) {
+            console.error('Error fetching pending appointments:', error);
+            setPendingAppointments([]);
+        } else {
+            const clientAppointments = (data as PendingAppointment[]).filter(app => app.client_id === client.id);
+            setPendingAppointments(clientAppointments || []);
+        }
+    }
+
+    const { pastAppointments, futureAppointments } = useMemo(() => {
+        const now = new Date();
+        const past = pendingAppointments.filter(app => new Date(app.start_time) <= now);
+        const future = pendingAppointments.filter(app => new Date(app.start_time) > now);
+        return { pastAppointments: past, futureAppointments: future };
+    }, [pendingAppointments]);
 
     const handleAddAppointmentToTicket = (appointment: PendingAppointment) => {
         if (!ticketItems.some(item => item.appointment_id === appointment.id)) {
@@ -173,15 +216,13 @@ const TpvPage: React.FC = () => {
         setIsPaymentModalOpen(true);
     };
 
-    const handlePaymentSuccess = async (paymentDetails: any) => {
+    const handlePaymentSuccess = async (paymentDetails: { payments: { method: string; amount: number }[] }) => {
         if (!selectedClient) return;
 
         const saleData = {
             client_id: selectedClient.id,
             cashier_id: cashierId,
-            payment_method: paymentDetails.method,
-            amount_paid: paymentDetails.amount_paid,
-            change_given: paymentDetails.change,
+            payments: paymentDetails.payments,
             notes: '', // Placeholder for sale notes
             general_discount: generalDiscount,
             items: ticketItems.map(item => ({
@@ -194,44 +235,89 @@ const TpvPage: React.FC = () => {
             }))
         };
 
-        const { data, error } = await supabase.rpc('create_sale', { p_sale_data: saleData });
+        const { data, error } = await supabase.rpc('create_sale_v6', { p_sale_data: saleData });
 
         if (error) {
             console.error('Error creating sale:', error);
-            alert('Hubo un error al registrar la venta.');
+            showErrorToast('Hubo un error al registrar la venta.');
         } else {
-            alert(`Venta registrada con éxito.`);
             setIsPaymentModalOpen(false);
-            setTicketItems([]);
-            setSelectedClient(null);
+            setCompletedSaleData(data as CompletedSaleData);
+            setIsNotePromptModalOpen(true);
         }
     };
 
-    const handleClientSelect = (client: Client) => {
+    const resetTpv = () => {
         setTicketItems([]);
-        setSelectedClient(client);
-    }
+        setSelectedClient(null);
+        setGeneralDiscount({ type: 'fixed', value: 0 });
+        setCompletedSaleData(null);
+    };
+
+    const handleCloseNoteModalsAndReset = () => {
+        showSuccessToast('Venta registrada con éxito.');
+        setIsNotePromptModalOpen(false);
+        setIsAddNoteModalOpen(false);
+        resetTpv();
+    };
+
+    const handleConfirmAddNote = () => {
+        setIsNotePromptModalOpen(false);
+        setIsAddNoteModalOpen(true);
+    };
+
+
 
     const handleClientChange = () => {
         setSelectedClient(null);
         setTicketItems([]);
+        setPendingAppointments([]);
+        setIsFutureAppointmentsVisible(false);
     }
 
-    const handleEditAppointment = (appointment: PendingAppointment) => {
-        // We need the full appointment object, but PendingAppointment is a summary.
-        // Let's find the full objects.
-        const fullAppointment: Appointment = {
-            id: appointment.id,
-            start_time: appointment.start_time,
-            end_time: '', // This will be recalculated in the modal
-            client: clients.find(c => c.id === selectedClient?.id)!,
-            service: services.find(s => s.id === appointment.service_id)!,
-            professional: professionals.find(p => p.id === appointment.professional_id)!,
-            status: 'Pendiente' // Assuming it's pending
-        }
-        setEditingAppointment(fullAppointment);
-        setIsEditModalOpen(true);
-    };
+        const handleEditAppointment = (appointment: PendingAppointment) => {
+
+            const clientExists = clients.some(c => c.id === appointment.client_id);
+
+            let currentClients = clients;
+
+    
+
+            if (!clientExists) {
+
+                const clientForAppointment = { id: appointment.client_id, full_name: appointment.client_name, phone: '', email: '', created_at: '', nickname: '' };
+
+                currentClients = [...clients, clientForAppointment as Client];
+
+            }
+
+    
+
+            const fullAppointment: Appointment = {
+
+                id: appointment.id,
+
+                start_time: appointment.start_time,
+
+                end_time: '', // This will be recalculated in the modal
+
+                client: { id: appointment.client_id, full_name: appointment.client_name, phone: '', email: '', created_at: '', nickname: '' } as Client,
+
+                service: services.find(s => s.id === appointment.service_id)!,
+
+                professional: professionals.find(p => p.id === appointment.professional_id)!,
+
+                status: 'Pendiente' // Assuming it's pending
+
+            }
+
+            setEditingAppointment(fullAppointment);
+
+            setClients(currentClients); // Pass the potentially updated client list to the modal
+
+            setIsEditModalOpen(true);
+
+        };
 
     const handleSaveAppointment = async (updatedAppointment: Appointment) => {
         const { error } = await supabase
@@ -246,21 +332,15 @@ const TpvPage: React.FC = () => {
             .eq('id', updatedAppointment.id);
 
         if (error) {
-            alert(`Error al actualizar la cita: ${error.message}`);
+            showErrorToast(`Error al actualizar la cita: ${error.message}`);
         } else {
+            showSuccessToast('Cita actualizada con éxito.');
             setIsEditModalOpen(false);
             setEditingAppointment(null);
 
-            // Smart Refresh Logic
-            if (selectedClient && selectedClient.id !== updatedAppointment.client.id) {
-                setSelectedClient(updatedAppointment.client);
-                setTicketItems([]); // Clear ticket for the new client
-            } else {
-                // If client is the same, we might need to refresh pending appointments
-                // For simplicity, we can just re-select the client to trigger a refresh
-                const currentClient = selectedClient;
-                setSelectedClient(null);
-                setTimeout(() => setSelectedClient(currentClient), 0);
+            // Refresh appointments for the current client
+            if (selectedClient) {
+                handleClientSelect(selectedClient);
             }
         }
     };
@@ -277,11 +357,13 @@ const TpvPage: React.FC = () => {
         return subtotal;
     }, [ticketItems, generalDiscount]);
 
+    const [isFutureAppointmentsVisible, setIsFutureAppointmentsVisible] = useState(false);
+
     return (
         <div>
             <PageHeader title="TPV - Terminal Punto de Venta" subtitle="Gestiona los cobros de servicios y la venta de bonos." />
             <div className="space-y-8">
-                <div className="p-8 bg-white rounded-xl shadow-sm">
+                <div className={`p-8 rounded-xl shadow-sm transition-colors ${selectedClient?.has_debt ? 'bg-red-50' : 'bg-white'}`}>
                     {!selectedClient ? <ClientSelector onClientSelect={handleClientSelect} /> : (
                         <div className="flex justify-between items-center">
                             <div>
@@ -299,14 +381,32 @@ const TpvPage: React.FC = () => {
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
                         <div className="lg:col-span-2 space-y-8">
                             <div className="bg-white p-8 rounded-xl shadow-sm">
-                                <h3 className="text-xl font-bold text-gray-800 mb-4">Servicios Pendientes de Cobro</h3>
-                                <PendingAppointments 
-                                    clientId={selectedClient.id} 
+                                <h3 className="text-xl font-bold text-gray-800 mb-4">Citas Pasadas Pendientes de Cobro</h3>
+                                <PastAppointments 
+                                    appointments={pastAppointments} 
                                     onAppointmentAdd={handleAddAppointmentToTicket} 
                                     onAppointmentEdit={handleEditAppointment}
                                     addedAppointmentIds={addedAppointmentIds} 
                                 />
                             </div>
+                            
+                            <div className="bg-white p-8 rounded-xl shadow-sm">
+                                <div onClick={() => setIsFutureAppointmentsVisible(!isFutureAppointmentsVisible)} className="cursor-pointer flex justify-between items-center">
+                                    <h3 className="text-xl font-bold text-gray-800">Citas Futuras Pendientes de Cobro</h3>
+                                    <ChevronDownIcon className={`h-6 w-6 text-gray-600 transform transition-transform ${isFutureAppointmentsVisible ? 'rotate-180' : ''}`} />
+                                </div>
+                                {isFutureAppointmentsVisible && (
+                                    <div className="mt-4">
+                                        <FutureAppointments 
+                                            appointments={futureAppointments} 
+                                            onAppointmentAdd={handleAddAppointmentToTicket} 
+                                            onAppointmentEdit={handleEditAppointment}
+                                            addedAppointmentIds={addedAppointmentIds} 
+                                        />
+                                    </div>
+                                )}
+                            </div>
+
                             <div className="bg-white p-8 rounded-xl shadow-sm">
                                 <h3 className="text-xl font-bold text-gray-800 mb-4">Añadir Servicio Manualmente</h3>
                                 <ServiceSelector onServiceSelect={handleSelectService} />
@@ -330,6 +430,16 @@ const TpvPage: React.FC = () => {
                 clients={clients}
                 services={services}
                 professionals={professionals}
+            />
+            <AddNotePromptModal 
+                isOpen={isNotePromptModalOpen}
+                onClose={handleCloseNoteModalsAndReset}
+                onConfirm={handleConfirmAddNote}
+            />
+            <AddServiceNoteModal 
+                isOpen={isAddNoteModalOpen}
+                onClose={handleCloseNoteModalsAndReset}
+                saleItems={completedSaleData?.sale_items || []}
             />
         </div>
     );

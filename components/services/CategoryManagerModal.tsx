@@ -76,7 +76,7 @@ const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({ isOpen, onC
                         ) : (
                             <div className="text-center py-10">
                                 <p className="text-gray-500">No hay categorías que coincidan.</p>
-                                {newCategoryName.trim() && <p className="text-gray-400 text-sm">Puedes crear la categoría "{newCategoryName}".</p>}
+                                {newCategoryName.trim() && <p className="text-gray-400 text-sm">Puedes añadir la categoría "{newCategoryName}" haciendo clic en el botón +.</p>}
                             </div>
                         )}
                     </div>

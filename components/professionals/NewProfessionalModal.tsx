@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Professional, Service, WeeklySchedule, ScheduleOverride } from '../../types';
+import { Professional, Service, WeeklySchedule } from '../../types';
 import { UploadIcon } from '../icons/Icons';
 import { ScheduleManager } from './ScheduleManager';
+
 
 type ProfessionalToSave = Omit<Professional, 'id' | 'creationDate' | 'avatar'> & {
     avatarFile?: File;
     schedules: WeeklySchedule;
-    overrides: ScheduleOverride[];
 };
 
 interface NewProfessionalModalProps {
@@ -39,7 +39,7 @@ const NewProfessionalModal: React.FC<NewProfessionalModalProps> = ({ isOpen, onC
     const [assignedServices, setAssignedServices] = useState<number[]>([]);
     const [color, setColor] = useState<Professional['color']>('pink');
     const [schedules, setSchedules] = useState<WeeklySchedule>({});
-    const [overrides, setOverrides] = useState<ScheduleOverride[]>([]);
+    
     const [error, setError] = useState('');
     const [serviceSearch, setServiceSearch] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -57,7 +57,6 @@ const NewProfessionalModal: React.FC<NewProfessionalModalProps> = ({ isOpen, onC
                 setAssignedServices([]);
                 setColor('pink');
                 setSchedules({});
-                setOverrides([]);
                 setError('');
                 setServiceSearch('');
             }, 200);
@@ -73,10 +72,9 @@ const NewProfessionalModal: React.FC<NewProfessionalModalProps> = ({ isOpen, onC
             avatarFile !== undefined ||
             assignedServices.length > 0 ||
             color !== 'pink' ||
-            Object.keys(schedules).length > 0 ||
-            overrides.length > 0
+            Object.keys(schedules).length > 0
         );
-    }, [name, email, phone, role, avatarFile, assignedServices, color, schedules, overrides]);
+    }, [name, email, phone, role, avatarFile, assignedServices, color, schedules]);
     
     const handleCloseAttempt = () => {
         if (isDirty) {
@@ -128,7 +126,6 @@ const NewProfessionalModal: React.FC<NewProfessionalModalProps> = ({ isOpen, onC
             assignedServices,
             avatarFile,
             schedules,
-            overrides,
         });
     };
 
@@ -278,20 +275,18 @@ const NewProfessionalModal: React.FC<NewProfessionalModalProps> = ({ isOpen, onC
                             </div>
                         </div>
                         
-                        {/* Schedule Manager Section */}
                         <div className="mt-8 pt-8 border-t border-gray-200">
                              <h3 className="text-lg font-semibold text-gray-800 mb-4">Gestión de Horarios</h3>
                              <ScheduleManager 
                                 schedules={schedules}
-                                overrides={overrides}
                                 onSchedulesChange={setSchedules}
-                                onOverridesChange={setOverrides}
+                                overrides={[]}
+                                onOverridesChange={() => {}}
                              />
                         </div>
 
                          {error && <p className="text-red-500 text-sm mt-4 text-center">{error}</p>}
                     </div>
-                    
                     <div className="bg-gray-50 px-8 py-4 rounded-b-2xl flex justify-end items-center space-x-3 mt-auto border-t">
                         <button 
                             type="button"

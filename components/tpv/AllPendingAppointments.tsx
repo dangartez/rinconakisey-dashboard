@@ -80,7 +80,7 @@ const AllPendingAppointments: React.FC = () => {
   return (
     <div className="bg-white p-8 rounded-xl shadow-sm">
       <div className="flex justify-between items-center mb-6">
-        <h3 className="text-xl font-bold text-gray-800">Citas Pendientes de Cobro (Global)</h3>
+        <h3 className="text-xl font-bold text-gray-800">Citas Pendientes</h3>
         <div className="flex items-center gap-2">
           <FilterButton label="TODAS" />
           <FilterButton label="PASADAS" />
@@ -103,7 +103,7 @@ const AllPendingAppointments: React.FC = () => {
             </thead>
             <tbody>
               {filteredAppointments.map(app => (
-                <tr key={app.id} className="border-b border-gray-100 hover:bg-gray-50">
+                <tr key={app.id} className={`border-b border-gray-100 transition-colors ${app.has_debt ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}`}>
                   <td className="p-3 text-gray-700 whitespace-nowrap">
                     {new Date(app.start_time).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </td>

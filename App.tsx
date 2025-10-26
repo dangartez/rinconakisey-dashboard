@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Routes, Route } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
 import SummaryPage from './pages/SummaryPage';
@@ -23,6 +24,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-gray-50 text-gray-800">
+      <Toaster />
       <Sidebar isCollapsed={isSidebarCollapsed} toggleSidebar={toggleSidebar} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />

@@ -98,6 +98,7 @@ const TpvEditAppointmentModal: React.FC<TpvEditAppointmentModalProps> = ({
                     selectedValue={selectedClient}
                     onSelect={(item) => setSelectedClient(item as Client | null)}
                     placeholder="Buscar cliente..."
+                    displayProperty="full_name"
                 />
               </div>
 

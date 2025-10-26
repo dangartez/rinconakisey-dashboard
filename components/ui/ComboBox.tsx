@@ -3,7 +3,7 @@ import { ChevronDownIcon } from '../icons/Icons';
 
 interface ComboBoxItem {
     id: number | string;
-    name: string;
+    [key: string]: any; // Allow any other properties
 }
 
 interface ComboBoxProps {
@@ -11,20 +11,21 @@ interface ComboBoxProps {
     selectedValue: ComboBoxItem | null;
     onSelect: (item: ComboBoxItem | null) => void;
     placeholder?: string;
+    displayProperty?: string;
 }
 
-const ComboBox: React.FC<ComboBoxProps> = ({ items, selectedValue, onSelect, placeholder = "Selecciona una opción" }) => {
+const ComboBox: React.FC<ComboBoxProps> = ({ items, selectedValue, onSelect, placeholder = "Selecciona una opción", displayProperty = 'name' }) => {
     const [inputValue, setInputValue] = useState('');
     const [isOpen, setIsOpen] = useState(false);
     const wrapperRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (selectedValue) {
-            setInputValue(selectedValue.name);
+            setInputValue(selectedValue[displayProperty]);
         } else {
             setInputValue('');
         }
-    }, [selectedValue]);
+    }, [selectedValue, displayProperty]);
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
@@ -41,12 +42,12 @@ const ComboBox: React.FC<ComboBoxProps> = ({ items, selectedValue, onSelect, pla
     const filteredItems = useMemo(() => {
         if (!inputValue) return items;
         const lowercasedInput = inputValue.toLowerCase();
-        return items.filter(item => item.name.toLowerCase().includes(lowercasedInput));
-    }, [items, inputValue]);
+        return items.filter(item => item[displayProperty].toLowerCase().includes(lowercasedInput));
+    }, [items, inputValue, displayProperty]);
 
     const handleSelect = (item: ComboBoxItem) => {
         onSelect(item);
-        setInputValue(item.name);
+        setInputValue(item[displayProperty]);
         setIsOpen(false);
     };
 
@@ -60,7 +61,7 @@ const ComboBox: React.FC<ComboBoxProps> = ({ items, selectedValue, onSelect, pla
                     onChange={(e) => {
                         setInputValue(e.target.value);
                         if (!isOpen) setIsOpen(true);
-                        if (selectedValue && e.target.value !== selectedValue.name) {
+                        if (selectedValue && e.target.value !== selectedValue[displayProperty]) {
                             onSelect(null); // Deselect if user types something different
                         }
                     }}
@@ -81,7 +82,7 @@ const ComboBox: React.FC<ComboBoxProps> = ({ items, selectedValue, onSelect, pla
                                 className="px-4 py-2 hover:bg-pink-100 cursor-pointer"
                                 onClick={() => handleSelect(item)}
                             >
-                                {item.name}
+                                {item[displayProperty]}
                             </div>
                         ))
                     ) : (

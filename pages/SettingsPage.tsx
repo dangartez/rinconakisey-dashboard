@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import PageHeader from '../components/ui/PageHeader';
 import BusinessInfoSettings from '../components/settings/BusinessInfoSettings';
@@ -5,20 +6,22 @@ import AgendaSettings from '../components/settings/AgendaSettings';
 import AppearanceSettings from '../components/settings/AppearanceSettings';
 import DataManagementSettings from '../components/settings/DataManagementSettings';
 import HomeSettings from '../components/settings/HomeSettings';
+import AdvancedManagement from '../components/settings/AdvancedManagement'; // Importado
 import { MenuIcon, ChevronLeftIcon } from '../components/icons/Icons';
 
-type SettingsTab = 'business' | 'agenda' | 'home' | 'appearance' | 'data';
+type SettingsTab = 'business' | 'agenda' | 'home' | 'appearance' | 'data' | 'advanced'; // Añadido
 
 const SettingsPage: React.FC = () => {
     const [activeTab, setActiveTab] = useState<SettingsTab>('business');
     const [isSubmenuCollapsed, setSubmenuCollapsed] = useState(false);
 
-    const tabs: { id: SettingsTab; label: string }[] = [
+    const tabs: { id: SettingsTab; label: string; isSeparator?: boolean }[] = [
         { id: 'business', label: 'Información del Negocio' },
         { id: 'agenda', label: 'Horarios y Reservas' },
         { id: 'home', label: 'Página de Inicio' },
         { id: 'appearance', label: 'Personalización' },
         { id: 'data', label: 'Gestión de Datos' },
+        { id: 'advanced', label: 'Gestión Avanzada', isSeparator: true }, // Añadido
     ];
     
     const renderContent = () => {
@@ -33,6 +36,8 @@ const SettingsPage: React.FC = () => {
                 return <AppearanceSettings />;
             case 'data':
                 return <DataManagementSettings />;
+            case 'advanced': // Añadido
+                return <AdvancedManagement />;
             default:
                 return null;
         }
@@ -51,19 +56,25 @@ const SettingsPage: React.FC = () => {
                                 <ChevronLeftIcon className="h-5 w-5 text-gray-500" />
                             </button>
                         </div>
-                        <nav className="flex flex-col space-y-2">
+                        <nav className="flex flex-col space-y-1">
                             {tabs.map(tab => (
-                                <button
-                                    key={tab.id}
-                                    onClick={() => setActiveTab(tab.id)}
-                                    className={`px-4 py-2 text-left rounded-lg text-sm font-medium transition-colors ${ 
-                                        activeTab === tab.id
-                                            ? 'bg-pink-100 text-pink-700'
-                                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                                    }`}
-                                >
-                                    {tab.label}
-                                </button>
+                                <React.Fragment key={tab.id}>
+                                    {tab.isSeparator && (
+                                        <div className="pt-2 mt-2 border-t border-gray-200">
+                                            <span className="px-4 text-xs font-semibold tracking-wider text-gray-400 uppercase">Avanzado</span>
+                                        </div>
+                                    )}
+                                    <button
+                                        onClick={() => setActiveTab(tab.id)}
+                                        className={`px-4 py-2 text-left rounded-lg text-sm font-medium transition-colors w-full ${ 
+                                            activeTab === tab.id
+                                                ? 'bg-pink-100 text-pink-700'
+                                                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                                        }`}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                </React.Fragment>
                             ))}
                         </nav>
                     </aside>

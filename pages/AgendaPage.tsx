@@ -8,6 +8,8 @@ import EditAppointmentModal from '../components/agenda/EditAppointmentModal';
 import ConfirmationModal from '../components/ui/ConfirmationModal';
 import ComboBox from '../components/ui/ComboBox';
 
+import EditGroupPromptModal from '../components/agenda/EditGroupPromptModal';
+
 // --- HELPERS ---
 const timeToMinutes = (time: string): number => {
   const [hours, minutes] = time.split(':').map(Number);
@@ -95,8 +97,8 @@ const TodayView: React.FC<{ appointments: Appointment[], professionals: Professi
       return (
         <div 
             style={{ top: `${top}px`, height: `${height}px` }} 
-            className={`absolute w-[calc(100%-0.5rem)] left-1 rounded-lg p-2 text-xs border-l-4 cursor-pointer hover:shadow-lg hover:ring-2 hover:ring-pink-400 transition-all ${colors.bg} ${colors.text} ${colors.border}`}
             onClick={() => onSelectAppointment(appointment)}
+            className={`absolute w-[calc(100%-0.5rem)] left-1 rounded-lg p-2 text-xs border-l-4 cursor-pointer hover:shadow-lg hover:ring-2 hover:ring-pink-400 transition-all ${colors.bg} ${colors.text} ${colors.border} ${appointment.client.has_debt ? 'ring-2 ring-red-400 ring-offset-1' : ''}`}
         >
           <p className="font-bold whitespace-nowrap overflow-hidden text-ellipsis">{appointment.service.name}</p>
           <p className="whitespace-nowrap overflow-hidden text-ellipsis">{appointment.client.name}</p>
@@ -156,8 +158,8 @@ const WeekView: React.FC<{ appointmentsByDate: Record<string, Appointment[]>, st
                             {appointments.sort((a,b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()).map(app => (
                                 <div 
                                     key={app.id} 
-                                    className={`p-2 rounded-lg border-l-4 cursor-pointer hover:shadow-md hover:ring-2 hover:ring-pink-300 transition-all ${professionalColorClasses[app.professional.color]}`}
                                     onClick={() => onSelectAppointment(app)}
+                                    className={`p-2 rounded-lg border-l-4 cursor-pointer hover:shadow-md hover:ring-2 hover:ring-pink-300 transition-all ${professionalColorClasses[app.professional.color]} ${app.client.has_debt ? 'ring-2 ring-red-400' : ''}`}
                                 >
                                     <p className="font-bold text-xs">{new Date(app.start_time).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</p>
                                     <p className="text-xs font-medium text-gray-800">{app.service.name}</p>
@@ -232,10 +234,13 @@ const AgendaPage: React.FC = () => {
     const [isCalendarVisible, setIsCalendarVisible] = useState(true);
     const [confirmation, setConfirmation] = useState<any>({ isOpen: false });
     const filterRef = useRef<HTMLDivElement>(null);
+    const [groupPromptState, setGroupPromptState] = useState<{isOpen: boolean; appointment: Appointment | null; groupAppointments: Appointment[], groupServices: Service[]}>({ isOpen: false, appointment: null, groupAppointments: [], groupServices: [] });
 
     // New state for filters
     const [selectedClient, setSelectedClient] = useState<Client | null>(null);
     const [selectedService, setSelectedService] = useState<Service | null>(null);
+    const [startDateFilter, setStartDateFilter] = useState<string>('');
+    const [endDateFilter, setEndDateFilter] = useState<string>('');
 
     // Adjust date when view changes
     useEffect(() => {
@@ -248,7 +253,7 @@ const AgendaPage: React.FC = () => {
 
     const fetchAppointments = async () => {
         const { data, error } = await supabase.from('appointments').select(`*,
-            client:clients(id, name:full_name),
+            client:clients_with_debt_status(id, name:full_name, has_debt),
             professional:professionals(id, name:full_name, color),
             service:services(id, name, duration)`);
         if (error) console.error('Error fetching appointments:', error);
@@ -266,7 +271,7 @@ const AgendaPage: React.FC = () => {
     };
 
     const fetchClients = async () => {
-        const { data, error } = await supabase.from('clients').select('*, name:full_name, registrationDate:created_at');
+        const { data, error } = await supabase.from('clients_with_debt_status').select('*, name:full_name, registrationDate:created_at');
         if (error) console.error('Error fetching clients:', error);
         else setClients(data as Client[]);
     };
@@ -322,6 +327,19 @@ const AgendaPage: React.FC = () => {
             filtered = filtered.filter(app => app.service && app.service.id === selectedService.id);
         }
 
+        // New date range filter logic takes precedence
+        if (startDateFilter) {
+            const start = startDateFilter;
+            const end = endDateFilter || start; // If no end date, filter for the single day
+
+            const rangeFiltered = filtered.filter(app => {
+                const appDate = formatDate(new Date(app.start_time));
+                return appDate >= start && appDate <= end;
+            });
+            return rangeFiltered.sort((a,b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+        }
+
+        // Original logic if no date filter is applied
         if (activeView === 'Hoy') {
             const todayStr = formatDate(currentDate);
             const todayAppointments = filtered.filter(app => {
@@ -346,13 +364,13 @@ const AgendaPage: React.FC = () => {
             return weekAppointments.sort((a,b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
         }
 
-        // Default case for 'TODAS'
+        // Default case for 'TODAS' - show upcoming from today
         const todayStr = formatDate(new Date());
         const upcomingAppointments = filtered.filter(app => formatDate(new Date(app.start_time)) >= todayStr);
 
         return upcomingAppointments.sort((a,b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
-    }, [appointments, selectedProfessionalIds, selectedClient, selectedService, activeView, currentDate]);
+    }, [appointments, selectedProfessionalIds, selectedClient, selectedService, activeView, currentDate, startDateFilter, endDateFilter]);
 
     const handleToggleAll = () => setSelectedProfessionalIds(areAllSelected ? [] : allProfessionalIds);
     const handleToggleProfessional = (id: string) => setSelectedProfessionalIds(prev => prev.includes(id) ? prev.filter(pId => pId !== id) : [...prev, id]);
@@ -373,47 +391,120 @@ const AgendaPage: React.FC = () => {
         setCurrentDate(newDate);
     };
     
-    const handleSelectAppointment = (appointment: Appointment) => {
-        setEditingAppointment(appointment);
+    const handleSelectAppointment = async (appointment: Appointment) => {
+        if (appointment.booking_group_id) {
+            // It's a group appointment, open the prompt
+            const { data: groupAppointments, error } = await supabase
+                .from('appointments')
+                .select('*, service:services(*)')
+                .eq('booking_group_id', appointment.booking_group_id);
+
+            if (error || !groupAppointments) {
+                alert('Error al cargar los datos del grupo de citas.');
+                return;
+            }
+
+            const groupServices = groupAppointments.map(a => a.service as Service);
+
+            setGroupPromptState({
+                isOpen: true,
+                appointment: appointment, // The specific one that was clicked
+                groupAppointments: groupAppointments as Appointment[],
+                groupServices: groupServices
+            });
+
+        } else {
+            // It's a single appointment, open the editor directly
+            setEditingAppointment(appointment);
+        }
     };
 
-    const handleUpdateAppointment = async (updatedAppointment: Appointment) => {
-        const { error } = await supabase
-            .from('appointments')
-            .update({
-                client_id: updatedAppointment.client.id,
-                service_id: updatedAppointment.service.id,
-                professional_id: updatedAppointment.professional.id,
-                start_time: updatedAppointment.start_time,
-                end_time: updatedAppointment.end_time,
-                status: updatedAppointment.status,
-            })
-            .eq('id', updatedAppointment.id);
+    const handleUpdateAppointment = async (payload: {
+        originalAppointment: Appointment;
+        selectedServices: Service[];
+        newStartTime: Date;
+        newProfessional: Professional;
+        newStatus: Appointment['status'];
+    }) => {
+        const {
+            originalAppointment,
+            selectedServices,
+            newStartTime,
+            newProfessional,
+            newStatus
+        } = payload;
+
+        const { error } = await supabase.rpc('update_booking_group', {
+            p_original_appointment_id: originalAppointment.id,
+            p_new_service_ids: selectedServices.map(s => s.id),
+            p_new_professional_id: newProfessional.id,
+            p_new_start_time: newStartTime.toISOString(),
+            p_new_status: newStatus
+        });
 
         if (error) {
             alert(`Error al actualizar la cita: ${error.message}`);
         } else {
-            fetchAppointments();
-            setEditingAppointment(null);
+            fetchAppointments(); // Refetch all appointments to reflect the changes
+            setEditingAppointment(null); // Close the modal
         }
     };
+
+    const handleCloseGroupPrompt = () => {
+        setGroupPromptState({ isOpen: false, appointment: null, groupAppointments: [], groupServices: [] });
+    };
+
+    const handleEditSingleFromPrompt = () => {
+        if (!groupPromptState.appointment) return;
+        setEditingAppointment(groupPromptState.appointment);
+        handleCloseGroupPrompt();
+    };
+
+    const handleEditGroupFromPrompt = () => {
+        if (!groupPromptState.appointment || !groupPromptState.groupServices) return;
+        
+        const groupAppointmentRep = {
+            ...groupPromptState.appointment,
+            services: groupPromptState.groupServices, // Pass the full list of services
+        };
+
+        setEditingAppointment(groupAppointmentRep as any);
+        handleCloseGroupPrompt();
+    };
     
-    const handleAddNewAppointment = async (data: any) => {
-        const { client, service, professionalId, date, startTime } = data;
-        const [hours, minutes] = startTime.split(':').map(Number);
-        const startDate = new Date(date);
-        startDate.setHours(hours, minutes, 0, 0);
+    const handleAddNewAppointment = async (data: {
+        client: Client;
+        services: Service[];
+        professional: Professional;
+        startTime: Date;
+    }) => {
+        const { client, services, professional, startTime } = data;
 
-        const endDate = new Date(startDate.getTime() + service.duration * 60000);
+        const appointmentsToInsert = [];
+        let runningTime = startTime;
+        const booking_group_id = services.length > 1 ? crypto.randomUUID() : null;
 
-        const { error } = await supabase.from('appointments').insert({
-            client_id: client.id,
-            service_id: service.id,
-            professional_id: professionalId === 'any' ? professionals[0].id : professionalId,
-            start_time: startDate.toISOString(),
-            end_time: endDate.toISOString(),
-            status: 'Pendiente',
-        });
+        for (const service of services) {
+            const endTime = new Date(runningTime.getTime() + service.duration * 60000);
+            
+            const newAppointment: any = {
+                client_id: client.id,
+                service_id: service.id,
+                professional_id: professional.id,
+                start_time: runningTime.toISOString(),
+                end_time: endTime.toISOString(),
+                status: 'Confirmada',
+            };
+
+            if (booking_group_id) {
+                newAppointment.booking_group_id = booking_group_id;
+            }
+
+            appointmentsToInsert.push(newAppointment);
+            runningTime = endTime; // The next service starts when the previous one ends
+        }
+
+        const { error } = await supabase.from('appointments').insert(appointmentsToInsert);
 
         if (error) {
             alert(`Error al crear la cita: ${error.message}`);
@@ -465,42 +556,71 @@ const AgendaPage: React.FC = () => {
                         </button>
                     </div>
                     
-                    <div className="flex flex-wrap items-center gap-4">
-                        {/* Row 2: Filters */}
-                        <div className="flex-grow md:flex-grow-0 w-full md:w-48">
-                            <ComboBox 
-                                items={clients}
-                                selectedValue={selectedClient}
-                                onSelect={(item) => setSelectedClient(item as Client | null)}
-                                placeholder="Buscar cliente..."
-                            />
+                    <div className="space-y-4">
+                        {/* --- FILTROS PRINCIPALES --- */}
+                        <div className="flex flex-wrap items-center gap-4">
+                            <div className="flex-grow md:flex-grow-0 w-full md:w-48">
+                                <ComboBox 
+                                    items={clients}
+                                    selectedValue={selectedClient}
+                                    onSelect={(item) => setSelectedClient(item as Client | null)}
+                                    placeholder="Buscar cliente..."
+                                />
+                            </div>
+                            <div className="flex-grow md:flex-grow-0 w-full md:w-48">
+                                <ComboBox 
+                                    items={services}
+                                    selectedValue={selectedService}
+                                    onSelect={(item) => setSelectedService(item as Service | null)}
+                                    placeholder="Buscar servicio..."
+                                />
+                            </div>
+                            <div ref={filterRef} className="relative">
+                                <button onClick={() => setIsFilterOpen(prev => !prev)} className="flex items-center space-x-2 border border-gray-200 bg-white px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors w-full justify-between md:w-auto">
+                                    <span className="text-sm font-medium text-gray-700">{areAllSelected ? 'Todos los Profesionales' : `${selectedProfessionalIds.length} seleccionados`}</span>
+                                    <ChevronDownIcon className="h-4 w-4 text-gray-500"/>
+                                </button>
+                                {isFilterOpen && (
+                                    <div className="absolute right-0 mt-2 w-48 bg-gray-800 text-white rounded-md shadow-lg z-10 py-1">
+                                        <div onClick={handleToggleAll} className="flex items-center px-3 py-2 text-sm hover:bg-gray-700 cursor-pointer"><div className="w-5 mr-2 flex items-center justify-center">{areAllSelected && <CheckIcon className="h-3.5 w-3.5" />}</div>Todos</div>
+                                        <div className="h-px bg-gray-700 my-1"></div>
+                                        {professionals.map(pro => (
+                                            <div key={pro.id} onClick={() => handleToggleProfessional(pro.id)} className="flex items-center px-3 py-2 text-sm hover:bg-gray-700 cursor-pointer"><div className="w-5 mr-2 flex items-center justify-center">{selectedProfessionalIds.includes(pro.id) && <CheckIcon className="h-3.5 w-3.5" />}</div>{pro.name}</div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                        <div className="flex-grow md:flex-grow-0 w-full md:w-48">
-                            <ComboBox 
-                                items={services}
-                                selectedValue={selectedService}
-                                onSelect={(item) => setSelectedService(item as Service | null)}
-                                placeholder="Buscar servicio..."
-                            />
-                        </div>
-                        <div ref={filterRef} className="relative">
-                            <button onClick={() => setIsFilterOpen(prev => !prev)} className="flex items-center space-x-2 border border-gray-200 bg-white px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors w-full justify-between md:w-auto">
-                                <span className="text-sm font-medium text-gray-700">{areAllSelected ? 'Todos los Profesionales' : `${selectedProfessionalIds.length} seleccionados`}</span>
-                                <ChevronDownIcon className="h-4 w-4 text-gray-500"/>
+
+                        {/* --- FILTRO DE FECHA Y ACCIONES --- */}
+                        <div className="flex flex-wrap items-center justify-between gap-4">
+                            <div className="flex items-center border border-gray-200 rounded-lg p-1.5 space-x-2 bg-white shadow-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                                <input
+                                    type="date"
+                                    value={startDateFilter}
+                                    onChange={(e) => setStartDateFilter(e.target.value)}
+                                    className="border-none focus:ring-0 p-1 text-sm text-gray-600 bg-transparent"
+                                />
+                                <span className="text-gray-300">-</span>
+                                <input
+                                    type="date"
+                                    value={endDateFilter}
+                                    onChange={(e) => setEndDateFilter(e.target.value)}
+                                    disabled={!startDateFilter}
+                                    min={startDateFilter}
+                                    className="border-none focus:ring-0 p-1 text-sm text-gray-600 bg-transparent disabled:bg-transparent"
+                                />
+                            </div>
+                            <button onClick={() => { setSelectedClient(null); setSelectedService(null); handleToggleAll(); setStartDateFilter(''); setEndDateFilter(''); }} className="text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-100">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                Limpiar Filtros
                             </button>
-                            {isFilterOpen && (
-                                <div className="absolute right-0 mt-2 w-48 bg-gray-800 text-white rounded-md shadow-lg z-10 py-1">
-                                    <div onClick={handleToggleAll} className="flex items-center px-3 py-2 text-sm hover:bg-gray-700 cursor-pointer"><div className="w-5 mr-2 flex items-center justify-center">{areAllSelected && <CheckIcon className="h-3.5 w-3.5" />}</div>Todos</div>
-                                    <div className="h-px bg-gray-700 my-1"></div>
-                                    {professionals.map(pro => (
-                                        <div key={pro.id} onClick={() => handleToggleProfessional(pro.id)} className="flex items-center px-3 py-2 text-sm hover:bg-gray-700 cursor-pointer"><div className="w-5 mr-2 flex items-center justify-center">{selectedProfessionalIds.includes(pro.id) && <CheckIcon className="h-3.5 w-3.5" />}</div>{pro.name}</div>
-                                    ))}
-                                </div>
-                            )}
                         </div>
-                        <button onClick={() => { setSelectedClient(null); setSelectedService(null); handleToggleAll(); }} className="text-sm font-medium text-pink-600 hover:text-pink-800 transition-colors">
-                            Limpiar Filtros
-                        </button>
                     </div>
                     
                     <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isCalendarVisible ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'}`}>
@@ -529,7 +649,7 @@ const AgendaPage: React.FC = () => {
                             </thead>
                             <tbody>
                                 {filteredAppointmentsForList.map(app => (
-                                    <tr key={app.id} className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50">
+                                    <tr key={app.id} className={`border-b border-gray-100 last:border-b-0 hover:bg-gray-50 ${app.client.has_debt ? 'bg-red-50' : ''}`}>
                                         <td className="p-4 text-gray-600 whitespace-nowrap">{new Date(app.start_time).toLocaleDateString('es-ES', {day: '2-digit', month: '2-digit', year: 'numeric'})}</td>
                                         <td className="p-4 text-gray-600 whitespace-nowrap">{new Date(app.start_time).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })} - {new Date(app.end_time).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</td>
                                         <td className="p-4 text-gray-800 font-medium">{app.client.name}</td>
@@ -576,6 +696,14 @@ const AgendaPage: React.FC = () => {
                 confirmButtonText={confirmation.confirmButtonText}
                 confirmButtonColor={confirmation.confirmButtonColor}
                 singleButton={confirmation.singleButton}
+            />
+            <EditGroupPromptModal 
+                isOpen={groupPromptState.isOpen}
+                onClose={handleCloseGroupPrompt}
+                onEditSingle={handleEditSingleFromPrompt}
+                onEditGroup={handleEditGroupFromPrompt}
+                groupServices={groupPromptState.groupServices}
+                clickedService={groupPromptState.appointment?.service}
             />
         </>
     );

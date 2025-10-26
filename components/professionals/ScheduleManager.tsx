@@ -33,31 +33,33 @@ function getDatesInRange(startDate: Date, endDate: Date): Date[] {
 
 export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
   schedules,
-  overrides,
+  overrides = [],
   onSchedulesChange,
   onOverridesChange,
 }) => {
 
-  // --- Lógica para Horario Semanal (sin cambios) ---
-  const handleShiftChange = (dayId: number, shiftIndex: number, field: 'start_time' | 'end_time', value: string) => {
+  const handleTimeChange = (
+    dayId: number,
+    shiftIndex: number,
+    field: 'start_time' | 'end_time',
+    value: string
+  ) => {
     const newSchedules = { ...schedules };
     const daySchedules = [...(newSchedules[dayId] || [])];
+
+    // Ensure the shift exists
+    while (daySchedules.length <= shiftIndex) {
+      daySchedules.push({ start_time: '', end_time: '' });
+    }
+
     daySchedules[shiftIndex] = { ...daySchedules[shiftIndex], [field]: value };
-    onSchedulesChange({ ...newSchedules, [dayId]: daySchedules });
-  };
 
-  const addShift = (dayId: number) => {
-    const newSchedules = { ...schedules };
-    const daySchedules = [...(newSchedules[dayId] || [])];
-    daySchedules.push({ start_time: '09:00', end_time: '14:00' });
-    onSchedulesChange({ ...newSchedules, [dayId]: daySchedules });
-  };
+    // Filter out empty shifts
+    const updatedDaySchedules = daySchedules.filter(
+      (shift) => shift.start_time || shift.end_time
+    );
 
-  const removeShift = (dayId: number, shiftIndex: number) => {
-    const newSchedules = { ...schedules };
-    const daySchedules = [...(newSchedules[dayId] || [])];
-    daySchedules.splice(shiftIndex, 1);
-    onSchedulesChange({ ...newSchedules, [dayId]: daySchedules });
+    onSchedulesChange({ ...newSchedules, [dayId]: updatedDaySchedules });
   };
 
   // --- Nueva Lógica para Períodos de Excepción ---
@@ -141,7 +143,49 @@ export const ScheduleManager: React.FC<ScheduleManagerProps> = ({
       {/* Weekly Schedule Section */}
       <div>
         <h4 className="text-base font-semibold text-gray-800 mb-4">Horario Semanal Fijo</h4>
-        {/* ...código del horario semanal sin cambios... */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+        {weekDays.map((day) => (
+          <div key={day.id} className="p-4 border rounded-lg">
+            <h4 className="font-semibold text-gray-700 mb-3">{day.name}</h4>
+            <div className="space-y-3">
+              {[0, 1].map((shiftIndex) => (
+                <div key={shiftIndex} className="flex items-center space-x-2">
+                  <span className="text-sm text-gray-500 w-14">
+                    {shiftIndex === 0 ? 'Mañana:' : 'Tarde:'}
+                  </span>
+                  <input
+                    type="time"
+                    value={schedules[day.id]?.[shiftIndex]?.start_time || ''}
+                    onChange={(e) =>
+                      handleTimeChange(
+                        day.id,
+                        shiftIndex,
+                        'start_time',
+                        e.target.value
+                      )
+                    }
+                    className="w-full bg-white px-3 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-pink-500 text-sm"
+                  />
+                  <span className="text-gray-400">-</span>
+                  <input
+                    type="time"
+                    value={schedules[day.id]?.[shiftIndex]?.end_time || ''}
+                    onChange={(e) =>
+                      handleTimeChange(
+                        day.id,
+                        shiftIndex,
+                        'end_time',
+                        e.target.value
+                      )
+                    }
+                    className="w-full bg-white px-3 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-pink-500 text-sm"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
       </div>
 
       {/* Overrides Section */}
