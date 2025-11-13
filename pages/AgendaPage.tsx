@@ -255,7 +255,8 @@ const AgendaPage: React.FC = () => {
         const { data, error } = await supabase.from('appointments').select(`*,
             client:clients_with_debt_status(id, name:full_name, has_debt),
             professional:professionals(id, name:full_name, color),
-            service:services(id, name, duration)`);
+            service:services(id, name, duration)`)
+            .not('status', 'eq', 'Cancelada');
         if (error) console.error('Error fetching appointments:', error);
         else setAppointments(data as any[] || []);
     };
