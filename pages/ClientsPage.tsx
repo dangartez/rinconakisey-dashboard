@@ -30,6 +30,7 @@ const ClientsPage: React.FC = () => {
     const [professionals, setProfessionals] = useState<Professional[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [debtFilter, setDebtFilter] = useState<'ALL' | 'WITH_DEBT'>('ALL'); // Estado para el filtro de deuda
+    const [bonoFilter, setBonoFilter] = useState<'ALL' | 'WITH_BONO'>('ALL'); // Estado para el filtro de bonos
 
     const [selectedClientForEdit, setSelectedClientForEdit] = useState<Client | null>(null);
     const [selectedClientForHistory, setSelectedClientForHistory] = useState<Client | null>(null);
@@ -40,7 +41,7 @@ const ClientsPage: React.FC = () => {
     });
 
     const fetchData = useCallback(async () => {
-        const { data: clientsData, error: clientsError } = await supabase.from('clients_with_debt_status').select('*').order('created_at', { ascending: false });
+        const { data: clientsData, error: clientsError } = await supabase.from('clients_with_bono_status').select('*').order('created_at', { ascending: false });
         if (clientsError) console.error('Error fetching clients:', clientsError);
         else setClients(clientsData?.map(c => ({...c, name: c.full_name, registrationDate: new Date(c.created_at).toLocaleDateString('es-ES')})) as Client[] || []);
 
@@ -61,6 +62,11 @@ const ClientsPage: React.FC = () => {
             tempClients = tempClients.filter(client => client.has_debt);
         }
 
+        // Aplicar filtro de bonos
+        if (bonoFilter === 'WITH_BONO') {
+            tempClients = tempClients.filter(client => client.has_bono);
+        }
+
         // Aplicar filtro de búsqueda
         if (!searchTerm.trim()) return tempClients;
         
@@ -71,7 +77,7 @@ const ClientsPage: React.FC = () => {
             (client.email || '').toLowerCase().includes(lowercasedFilter) ||
             (client.nickname || '').toLowerCase().includes(lowercasedFilter)
         );
-    }, [searchTerm, clients, debtFilter]); // Añadir debtFilter a las dependencias
+    }, [searchTerm, clients, debtFilter, bonoFilter]); // Añadir bonoFilter a las dependencias
 
     const handleAddClient = async (data: { 
         clientData: Omit<Client, 'id' | 'registrationDate'> & { password?: string };
@@ -179,14 +185,19 @@ const ClientsPage: React.FC = () => {
                     <div className="flex justify-between items-center mb-6">
                         <div className="flex items-center gap-2">
                             <button 
-                                onClick={() => setDebtFilter('ALL')}
-                                className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${debtFilter === 'ALL' ? 'bg-pink-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>
+                                onClick={() => { setDebtFilter('ALL'); setBonoFilter('ALL'); }}
+                                className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${debtFilter === 'ALL' && bonoFilter === 'ALL' ? 'bg-pink-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>
                                 Todos los Clientes
                             </button>
                             <button 
-                                onClick={() => setDebtFilter('WITH_DEBT')}
+                                onClick={() => { setDebtFilter('WITH_DEBT'); setBonoFilter('ALL'); }}
                                 className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${debtFilter === 'WITH_DEBT' ? 'bg-pink-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>
                                 Clientes con Deuda
+                            </button>
+                            <button 
+                                onClick={() => { setBonoFilter('WITH_BONO'); setDebtFilter('ALL'); }}
+                                className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${bonoFilter === 'WITH_BONO' ? 'bg-pink-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>
+                                Clientes con Bonos
                             </button>
                         </div>
                         <div className="w-full max-w-md">
@@ -206,7 +217,7 @@ const ClientsPage: React.FC = () => {
                             </thead>
                             <tbody>
                                 {filteredClients.map(client => (
-                                <tr key={client.id} className={`border-b border-gray-100 last:border-b-0 transition-colors ${client.has_debt ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50/50'}`}>
+                                <tr key={client.id} className={`border-b border-gray-100 last:border-b-0 transition-colors ${client.has_debt ? 'bg-red-50 hover:bg-red-100' : client.has_bono ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-gray-50/50'}`}>
                                         <td className="p-4 text-gray-800 font-medium">{client.name}</td>
                                         <td className="p-4 text-gray-600"><div>{client.phone}</div><div className="text-xs text-gray-500">{client.email}</div></td>
                                         <td className="p-4 text-gray-600">{client.registrationDate}</td>

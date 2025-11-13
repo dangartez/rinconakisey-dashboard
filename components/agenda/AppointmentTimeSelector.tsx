@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Service, Professional, Appointment } from '../../types';
 import { ChevronLeftIcon, ChevronRightIcon } from '../icons/Icons';
 import AvailableSlotsModal from './AvailableSlotsModal';
@@ -44,7 +44,7 @@ interface AppointmentTimeSelectorProps {
 }
 
 const AppointmentTimeSelector: React.FC<AppointmentTimeSelectorProps> = (props) => {
-  const { 
+  const {
     professional, appointmentToEdit, onDateTimeSelected, allProfessionals, onProfessionalSelected,
     dateTimeView, setDateTimeView, selectedDate, setSelectedDate, weekOffset, setWeekOffset,
     isLoadingSlots, computedSlots, workSchedule, isSlotsModalOpen, setIsSlotsModalOpen,
@@ -53,6 +53,7 @@ const AppointmentTimeSelector: React.FC<AppointmentTimeSelectorProps> = (props) 
   } = props;
 
   const isEditMode = !!appointmentToEdit;
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(null);
 
   const handleSelectDateTime = (date: Date, time: string, professionalId: string) => {
     if (!professional && onProfessionalSelected) {
@@ -61,6 +62,7 @@ const AppointmentTimeSelector: React.FC<AppointmentTimeSelectorProps> = (props) 
         onProfessionalSelected(assignedProfessional);
       }
     }
+    setSelectedTimeSlot(time); // Mark this time slot as selected
     onDateTimeSelected(date, time, professionalId);
   };
 
@@ -150,12 +152,12 @@ const AppointmentTimeSelector: React.FC<AppointmentTimeSelectorProps> = (props) 
                                 const isDisabled = isPast || !slot.isAvailable;
 
                                 return (
-                                    <button 
+                                    <button
                                         key={slot.time}
                                         type="button"
                                         onClick={() => !isDisabled && handleSelectDateTime(selectedDate, slot.time, slot.professionalId)}
                                         disabled={isDisabled}
-                                        className={`px-3 py-2 text-sm rounded-lg font-semibold transition-colors ${!isDisabled ? 'bg-pink-600 text-white hover:bg-pink-700' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
+                                        className={`px-3 py-2 text-sm rounded-lg font-semibold transition-colors ${!isDisabled ? (selectedTimeSlot === slot.time ? 'bg-pink-300 bg-opacity-70 text-pink-800' : 'bg-pink-600 text-white hover:bg-pink-700') : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
                                         {slot.time}
                                     </button>
                                 );

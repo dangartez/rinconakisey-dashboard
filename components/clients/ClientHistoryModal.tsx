@@ -5,6 +5,7 @@ import { UserPlusIcon, CalendarDaysIcon, ServicesIcon, SummaryIcon, StarIcon, Pe
 import ServiceNotesView from './ServiceNotesView';
 import EditServiceNoteModal from './EditServiceNoteModal';
 import DebtView from './DebtView'; // Importar el nuevo componente
+import BonoView from './BonoView'; // Importar el nuevo componente
 
 // --- TYPES ---
 interface ClientNote {
@@ -44,7 +45,7 @@ interface HistoryData {
   sales: Sale[];
 }
 
-type ActiveTab = 'resumen' | 'notas' | 'notas_servicios' | 'compras' | 'historial' | 'deudas';
+type ActiveTab = 'resumen' | 'notas' | 'notas_servicios' | 'compras' | 'historial' | 'deudas' | 'bonos';
 
 
 // --- SUB-COMPONENTS ---
@@ -297,6 +298,8 @@ const ClientHistoryModal: React.FC<ClientHistoryModalProps> = ({ isOpen, onClose
                 );
             case 'deudas':
                 return <DebtView clientId={client!.id} onDebtUpdate={onDataChange} />;
+            case 'bonos':
+                return <BonoView clientId={client!.id} />;
             case 'historial':
                 return (
                     <div className="p-8">
@@ -354,6 +357,7 @@ const ClientHistoryModal: React.FC<ClientHistoryModalProps> = ({ isOpen, onClose
                         <TabButton label="Notas Servicios" tabId="notas_servicios" activeTab={activeTab} onClick={setActiveTab} />
                         <TabButton label="Compras" tabId="compras" activeTab={activeTab} onClick={setActiveTab} />
                         <TabButton label="Deudas" tabId="deudas" activeTab={activeTab} onClick={setActiveTab} />
+                        <TabButton label="Bonos" tabId="bonos" activeTab={activeTab} onClick={setActiveTab} />
                         <TabButton label="Historial" tabId="historial" activeTab={activeTab} onClick={setActiveTab} />
                     </div>
                 </div>

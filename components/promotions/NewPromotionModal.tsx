@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Promotion } from '../../types';
+import { Promotion, Service } from '../../types';
 import { UploadIcon } from '../icons/Icons';
 import ToggleSwitch from '../ui/ToggleSwitch';
+import { supabase } from '../../lib/supabaseClient';
 
 type NewPromotionData = Omit<Promotion, 'id' | 'image'> & {
     imageFile?: File;
+    serviceIds: number[];
 };
 
 interface NewPromotionModalProps {
@@ -23,9 +25,23 @@ const NewPromotionModal: React.FC<NewPromotionModalProps> = ({ isOpen, onClose, 
     const [imagePreview, setImagePreview] = useState<string | undefined>();
     const [error, setError] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
+    
+    const [services, setServices] = useState<Service[]>([]);
+    const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
+    const [searchTerm, setSearchTerm] = useState('');
 
     useEffect(() => {
-        if (!isOpen) {
+        if (isOpen) {
+            const fetchServices = async () => {
+                const { data, error } = await supabase.from('services').select('id, name');
+                if (error) {
+                    console.error('Error fetching services:', error);
+                } else {
+                    setServices(data as Service[]);
+                }
+            };
+            fetchServices();
+        } else {
             setTimeout(() => {
                 setTitle('');
                 setDescription('');
@@ -34,10 +50,18 @@ const NewPromotionModal: React.FC<NewPromotionModalProps> = ({ isOpen, onClose, 
                 setIsActive(true);
                 setImageFile(undefined);
                 setImagePreview(undefined);
+                setSelectedServiceIds([]);
+                setSearchTerm('');
                 setError('');
             }, 200);
         }
     }, [isOpen]);
+
+    const filteredServices = useMemo(() => {
+        return services.filter(service =>
+            service.name.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+    }, [services, searchTerm]);
 
     const isDirty = useMemo(() => {
         return (
@@ -46,9 +70,10 @@ const NewPromotionModal: React.FC<NewPromotionModalProps> = ({ isOpen, onClose, 
             originalPrice !== '' ||
             promoPrice !== '' ||
             isActive !== true ||
-            imageFile !== undefined
+            imageFile !== undefined ||
+            selectedServiceIds.length > 0
         );
-    }, [title, description, originalPrice, promoPrice, isActive, imageFile]);
+    }, [title, description, originalPrice, promoPrice, isActive, imageFile, selectedServiceIds]);
 
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -57,6 +82,14 @@ const NewPromotionModal: React.FC<NewPromotionModalProps> = ({ isOpen, onClose, 
             const previewUrl = URL.createObjectURL(file);
             setImagePreview(previewUrl);
         }
+    };
+
+    const handleServiceToggle = (serviceId: number) => {
+        setSelectedServiceIds(prev => 
+            prev.includes(serviceId) 
+                ? prev.filter(id => id !== serviceId)
+                : [...prev, serviceId]
+        );
     };
 
     const handleCloseAttempt = () => {
@@ -79,6 +112,10 @@ const NewPromotionModal: React.FC<NewPromotionModalProps> = ({ isOpen, onClose, 
             setError('Los precios deben ser números positivos.');
             return;
         }
+        if (selectedServiceIds.length === 0) {
+            setError('Debes seleccionar al menos un servicio para la promoción.');
+            return;
+        }
 
         setError('');
         onSave({
@@ -88,6 +125,7 @@ const NewPromotionModal: React.FC<NewPromotionModalProps> = ({ isOpen, onClose, 
             promoPrice: Number(promoPrice),
             isActive: isActive,
             imageFile,
+            serviceIds: selectedServiceIds,
         });
     };
 
@@ -124,6 +162,30 @@ const NewPromotionModal: React.FC<NewPromotionModalProps> = ({ isOpen, onClose, 
                             <div>
                                 <label htmlFor="promo-price" className="block text-sm font-medium text-gray-700 mb-1">Precio Promoción (€) <span className="text-red-500">*</span></label>
                                 <input type="number" id="promo-price" value={promoPrice} onChange={e => setPromoPrice(e.target.value)} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500" min="0" />
+                            </div>
+
+                            <div className="md:col-span-2">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Servicios Incluidos <span className="text-red-500">*</span></label>
+                                <input 
+                                    type="text"
+                                    placeholder="Buscar servicios..."
+                                    value={searchTerm}
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                    className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg mb-2 focus:outline-none focus:ring-2 focus:ring-pink-500"
+                                />
+                                <div className="max-h-40 overflow-y-auto bg-white border border-gray-300 rounded-lg p-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {filteredServices.map(service => (
+                                        <label key={service.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-gray-50 cursor-pointer">
+                                            <input 
+                                                type="checkbox"
+                                                checked={selectedServiceIds.includes(service.id)}
+                                                onChange={() => handleServiceToggle(service.id)}
+                                                className="h-4 w-4 rounded border-gray-300 text-pink-600 focus:ring-pink-500"
+                                            />
+                                            <span className="text-sm text-gray-800">{service.name}</span>
+                                        </label>
+                                    ))}
+                                </div>
                             </div>
 
                             <div className="md:col-span-2">

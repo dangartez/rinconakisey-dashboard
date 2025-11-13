@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { XMarkIcon } from '../icons/Icons';
 
 interface AvailableSlotsModalProps {
@@ -11,6 +11,8 @@ interface AvailableSlotsModalProps {
 }
 
 const AvailableSlotsModal: React.FC<AvailableSlotsModalProps> = ({ isOpen, onClose, groupedSlots, handleSelectDateTime, isLoading }) => {
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(null);
+  
   if (!isOpen) return null;
 
   return (
@@ -45,14 +47,15 @@ const AvailableSlotsModal: React.FC<AvailableSlotsModalProps> = ({ isOpen, onClo
                     {new Date(dateString + 'T00:00:00Z').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}
                   </h3>
                   <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                    {slots.map(({ time, professional_id }) => (
+                    {(slots as { time: string; professional_id: string }[]).map(({ time, professional_id }) => (
                       <button
                         key={time}
                         onClick={() => {
+                          setSelectedTimeSlot(time); // Mark this time slot as selected
                           handleSelectDateTime(new Date(dateString + 'T00:00:00Z'), time, professional_id);
                           onClose(); // Close modal on selection
                         }}
-                        className="px-4 py-3 rounded-lg font-semibold transition bg-pink-600 text-white hover:bg-pink-700"
+                        className={`px-4 py-3 rounded-lg font-semibold transition ${selectedTimeSlot === time ? 'bg-pink-300 bg-opacity-70 text-pink-800' : 'bg-pink-600 text-white hover:bg-pink-700'}`}
                       >
                         {time}
                       </button>

@@ -425,28 +425,64 @@ const AgendaPage: React.FC = () => {
         newStartTime: Date;
         newProfessional: Professional;
         newStatus: Appointment['status'];
-    }) => {
+        isEditingSingle?: boolean; // New flag to indicate if we're editing a single service
+    }): Promise<boolean> => {
         const {
             originalAppointment,
             selectedServices,
             newStartTime,
             newProfessional,
-            newStatus
+            newStatus,
+            isEditingSingle = false // Default to false for backward compatibility
         } = payload;
 
-        const { error } = await supabase.rpc('update_booking_group', {
-            p_original_appointment_id: originalAppointment.id,
-            p_new_service_ids: selectedServices.map(s => s.id),
-            p_new_professional_id: newProfessional.id,
-            p_new_start_time: newStartTime.toISOString(),
-            p_new_status: newStatus
-        });
+        let error;
+
+        if (isEditingSingle && selectedServices.length === 1) {
+            // Editing a single service from a group - use the new function
+            console.log('DEBUG: Calling update_single_appointment with parameters:', {
+                p_appointment_id: originalAppointment.id,
+                p_new_service_id: selectedServices[0].id,
+                p_new_professional_id: newProfessional.id,
+                p_new_start_time: newStartTime.toISOString(),
+                p_new_status: newStatus
+            });
+
+            const result = await supabase.rpc('update_single_appointment', {
+                p_appointment_id: originalAppointment.id,
+                p_new_service_id: selectedServices[0].id,
+                p_new_professional_id: newProfessional.id,
+                p_new_start_time: newStartTime.toISOString(),
+                p_new_status: newStatus
+            });
+            error = result.error;
+        } else {
+            // Editing the entire group - use the existing function
+            console.log('DEBUG: Calling update_booking_group with parameters:', {
+                p_original_appointment_id: originalAppointment.id,
+                p_new_service_ids: selectedServices.map(s => s.id),
+                p_new_professional_id: newProfessional.id,
+                p_new_start_time: newStartTime.toISOString(),
+                p_new_status: newStatus
+            });
+
+            const result = await supabase.rpc('update_booking_group', {
+                p_original_appointment_id: originalAppointment.id,
+                p_new_service_ids: selectedServices.map(s => s.id),
+                p_new_professional_id: newProfessional.id,
+                p_new_start_time: newStartTime.toISOString(),
+                p_new_status: newStatus
+            });
+            error = result.error;
+        }
 
         if (error) {
             alert(`Error al actualizar la cita: ${error.message}`);
+            return false;
         } else {
-            fetchAppointments(); // Refetch all appointments to reflect the changes
-            setEditingAppointment(null); // Close the modal
+            // Force a complete refresh of appointments data
+            await fetchAppointments();
+            return true;
         }
     };
 
@@ -456,7 +492,12 @@ const AgendaPage: React.FC = () => {
 
     const handleEditSingleFromPrompt = () => {
         if (!groupPromptState.appointment) return;
-        setEditingAppointment(groupPromptState.appointment);
+        // Add a flag to indicate we're editing a single service from a group
+        const singleAppointment = {
+            ...groupPromptState.appointment,
+            isEditingSingle: true
+        };
+        setEditingAppointment(singleAppointment as any);
         handleCloseGroupPrompt();
     };
 

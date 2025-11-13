@@ -2,7 +2,14 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Appointment, Client, Service, Professional } from '../../types';
 import { supabase } from '../../lib/supabaseClient';
 import AppointmentTimeSelector from './AppointmentTimeSelector';
-import { ComputedSlot, TimeSlot } from './AppointmentTimeSelector';
+import { ComputedSlot } from './AppointmentTimeSelector';
+import ConfirmationModal from '../ui/ConfirmationModal';
+
+// Define TimeSlot interface locally since it's not exported from AppointmentTimeSelector
+interface TimeSlot {
+    time: string;
+    professional_id: string;
+}
 
 const formatDate = (date: Date): string => {
     const year = date.getFullYear();
@@ -20,6 +27,7 @@ interface EditAppointmentModalProps {
     newStartTime: Date;
     newProfessional: Professional;
     newStatus: Appointment['status'];
+    isEditingSingle?: boolean;
   }) => void;
   appointment: Appointment;
   clients: Client[];
@@ -27,10 +35,10 @@ interface EditAppointmentModalProps {
   professionals: Professional[];
 }
 
-const EditAppointmentModal: React.FC<EditAppointmentModalProps> = ({ isOpen, onClose, onSave, appointment, clients, services, professionals }) => {
+const EditAppointmentModal: React.FC<EditAppointmentModalProps> = ({ isOpen, onClose, onSave, appointment, clients, services = [], professionals }) => {
     // Main form state
     const [selectedProfessional, setSelectedProfessional] = useState<Professional | null>(null);
-    const [status, setStatus] = useState<Appointment['status']>('Confirmada');
+    const [status, setStatus] = useState<Appointment['status']>('Pendiente');
     const [selectedClient, setSelectedClient] = useState<Client | null>(null);
     const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
     const [selectedSlot, setSelectedSlot] = useState<{time: string, professional_id: string} | null>(null);
@@ -50,6 +58,7 @@ const EditAppointmentModal: React.FC<EditAppointmentModalProps> = ({ isOpen, onC
     const [filterStartTime, setFilterStartTime] = useState('08:00');
     const [filterEndTime, setFilterEndTime] = useState('21:00');
     const [isSlotsModalOpen, setIsSlotsModalOpen] = useState(false);
+    const [showSuccessModal, setShowSuccessModal] = useState(false);
 
     // --- EFFECTS ---
     useEffect(() => {
@@ -71,13 +80,14 @@ const EditAppointmentModal: React.FC<EditAppointmentModalProps> = ({ isOpen, onC
             setStatus(appointment.status);
             setError('');
             setServiceSearch('');
+            setShowSuccessModal(false); // Reset on open
         }
     }, [isOpen, appointment, clients]);
 
-    const selectedServiceObjects = useMemo(() => services.filter(s => selectedServiceIds.includes(s.id)).sort((a, b) => a.name.localeCompare(b.name)), [selectedServiceIds, services]);
+    const selectedServiceObjects = useMemo(() => services?.filter(s => selectedServiceIds.includes(s.id)).sort((a, b) => a.name.localeCompare(b.name)) || [], [selectedServiceIds, services]);
 
     useEffect(() => {
-        const selectedServiceObjects = services.filter(s => selectedServiceIds.includes(s.id));
+        const selectedServiceObjects = services?.filter(s => selectedServiceIds.includes(s.id)) || [];
         if (!isOpen || selectedServiceObjects.length === 0 || dateTimeView !== 'calendar' || !selectedProfessional) {
             setComputedSlots([]);
             setWorkSchedule(null);
@@ -169,8 +179,8 @@ const EditAppointmentModal: React.FC<EditAppointmentModalProps> = ({ isOpen, onC
     // --- HANDLERS & MEMOS ---
     const handleServiceToggle = (serviceId: number) => setSelectedServiceIds(prev => prev.includes(serviceId) ? prev.filter(id => id !== serviceId) : [...prev, serviceId]);
     const filteredAvailableServices = useMemo(() => {
-        if (!serviceSearch.trim()) return services.sort((a,b) => a.name.localeCompare(b.name));
-        return services.filter(s => s.name.toLowerCase().includes(serviceSearch.toLowerCase())).sort((a,b) => a.name.localeCompare(b.name));
+        if (!serviceSearch.trim()) return services?.sort((a,b) => a.name.localeCompare(b.name)) || [];
+        return services?.filter(s => s.name.toLowerCase().includes(serviceSearch.toLowerCase())).sort((a,b) => a.name.localeCompare(b.name)) || [];
     }, [serviceSearch, services]);
 
     const handleDateTimeSelected = (selectedDate: Date, time: string, professionalId: string) => {
@@ -219,7 +229,7 @@ const EditAppointmentModal: React.FC<EditAppointmentModalProps> = ({ isOpen, onC
         return groups;
     }, [rangeSlots, filterStartTime, filterEndTime]);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedClient || !selectedProfessional || !date || !selectedSlot) {
             setError('Todos los campos y la selección de hora son obligatorios.');
@@ -230,82 +240,112 @@ const EditAppointmentModal: React.FC<EditAppointmentModalProps> = ({ isOpen, onC
         newStartDate.setHours(hours, minutes, 0, 0);
         
         setError('');
-        onSave({
-            originalAppointment: appointment,
-            selectedServices: selectedServiceObjects,
-            newStartTime: newStartDate,
-            newProfessional: selectedProfessional,
-            newStatus: status
-        });
+        
+        try {
+            const success = await onSave({
+                originalAppointment: appointment,
+                selectedServices: selectedServiceObjects,
+                newStartTime: newStartDate,
+                newProfessional: selectedProfessional,
+                newStatus: status,
+                isEditingSingle: (appointment as any).isEditingSingle || false
+            });
+
+            if (success) {
+                setShowSuccessModal(true);
+            } else {
+                setError('No se pudo guardar la cita. Por favor, revisa los datos o inténtalo más tarde.');
+            }
+        } catch (saveError) {
+            setError('Hubo un error al guardar la cita. Por favor, inténtalo de nuevo.');
+            console.error(saveError);
+        }
+    };
+
+    const handleCloseSuccessModal = () => {
+        setShowSuccessModal(false);
+        onClose(); // Close the main edit modal
     };
 
     // --- RENDER ---
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4 animate-fadeIn" onClick={onClose}>
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl transform transition-all duration-300 animate-scaleUp max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-                <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-                    <div className="p-8 overflow-y-auto min-h-0">
-                        <h2 id="modal-title" className="text-3xl font-bold text-gray-900 mb-8">Editar Cita</h2>
-                        <div className="space-y-6">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
-                                <input type="text" value={selectedClient?.name || 'Cliente no encontrado'} readOnly className="w-full bg-gray-100 px-4 py-2 border border-gray-300 rounded-lg" />
-                            </div>
-                            <div>
-                                <h3 className="text-lg font-semibold text-gray-800 mb-2">Servicios Asignados</h3>
-                                <div className="flex items-center space-x-2 mb-3">
-                                    <input type="text" placeholder="Buscar servicio..." value={serviceSearch} onChange={(e) => setServiceSearch(e.target.value)} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-sm"/>
+        <>
+            <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4 animate-fadeIn" onClick={onClose}>
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl transform transition-all duration-300 animate-scaleUp max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                    <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+                        <div className="p-8 overflow-y-auto min-h-0">
+                            <h2 id="modal-title" className="text-3xl font-bold text-gray-900 mb-8">Editar Cita</h2>
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
+                                    <input type="text" value={selectedClient?.full_name || selectedClient?.name || 'Cliente no encontrado'} readOnly className="w-full bg-gray-100 px-4 py-2 border border-gray-300 rounded-lg" />
                                 </div>
-                                <div className="grid grid-cols-2 gap-4 flex-1">
-                                    <div>
-                                        <h4 className="font-semibold text-gray-600 text-sm mb-2">Disponibles ({filteredAvailableServices.length})</h4>
-                                        <div className="border border-gray-200 rounded-lg bg-white h-full overflow-y-auto p-2 space-y-1">
-                                            {filteredAvailableServices.map(service => (
-                                                <button key={service.id} type="button" onClick={() => handleServiceToggle(service.id)} disabled={selectedServiceIds.includes(service.id)} className="w-full text-left p-2 rounded text-sm transition-colors text-gray-800 disabled:bg-pink-50 disabled:text-pink-700 disabled:font-medium disabled:cursor-default hover:bg-gray-50">{service.name}</button>
-                                            ))}
+                                <div>
+                                    <h3 className="text-lg font-semibold text-gray-800 mb-2">Servicios Asignados</h3>
+                                    <div className="flex items-center space-x-2 mb-3">
+                                        <input type="text" placeholder="Buscar servicio..." value={serviceSearch} onChange={(e) => setServiceSearch(e.target.value)} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 text-sm"/>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4 flex-1">
+                                        <div>
+                                            <h4 className="font-semibold text-gray-600 text-sm mb-2">Disponibles ({filteredAvailableServices.length})</h4>
+                                            <div className="border border-gray-200 rounded-lg bg-white h-full overflow-y-auto p-2 space-y-1">
+                                                {filteredAvailableServices.map(service => (
+                                                    <button key={service.id} type="button" onClick={() => handleServiceToggle(service.id)} disabled={selectedServiceIds.includes(service.id)} className="w-full text-left p-2 rounded text-sm transition-colors text-gray-800 disabled:bg-pink-50 disabled:text-pink-700 disabled:font-medium disabled:cursor-default hover:bg-gray-50">{service.name}</button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <h4 className="font-semibold text-gray-600 text-sm mb-2">Seleccionados ({selectedServiceObjects.length})</h4>
+                                            <div className="border border-gray-200 rounded-lg bg-white h-full overflow-y-auto p-2 space-y-1">
+                                                {selectedServiceObjects.length > 0 ? selectedServiceObjects.map(service => (
+                                                    <div key={service.id} className="flex items-center justify-between p-2 rounded bg-white text-sm text-gray-800 border border-gray-100">
+                                                        <span className="font-medium">{service.name}</span>
+                                                        <button type="button" onClick={() => handleServiceToggle(service.id)} className="text-gray-400 hover:text-red-500 p-1" aria-label={`Quitar ${service.name}`}><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                                                    </div>
+                                                )) : <div className="flex items-center justify-center h-full text-center text-sm text-gray-400 p-4"><p>Selecciona servicios de la lista de disponibles.</p></div>}
+                                            </div>
                                         </div>
                                     </div>
-                                    <div>
-                                        <h4 className="font-semibold text-gray-600 text-sm mb-2">Seleccionados ({selectedServiceObjects.length})</h4>
-                                        <div className="border border-gray-200 rounded-lg bg-white h-full overflow-y-auto p-2 space-y-1">
-                                            {selectedServiceObjects.length > 0 ? selectedServiceObjects.map(service => (
-                                                <div key={service.id} className="flex items-center justify-between p-2 rounded bg-white text-sm text-gray-800 border border-gray-100">
-                                                    <span className="font-medium">{service.name}</span>
-                                                    <button type="button" onClick={() => handleServiceToggle(service.id)} className="text-gray-400 hover:text-red-500 p-1" aria-label={`Quitar ${service.name}`}><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
-                                                </div>
-                                            )) : <div className="flex items-center justify-center h-full text-center text-sm text-gray-400 p-4"><p>Selecciona servicios de la lista de disponibles.</p></div>}
-                                        </div>
+                                </div>
+                                <div>
+                                    <label htmlFor="professional-select" className="block text-sm font-medium text-gray-700 mb-1">Profesional</label>
+                                    <select id="professional-select" value={selectedProfessional?.id || ''} onChange={e => setSelectedProfessional(professionals.find(p => p.id === e.target.value)!)} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500">{professionals.map(pro => <option key={pro.id} value={pro.id}>{pro.full_name || pro.name}</option>)}</select>
+                                </div>
+                                <AppointmentTimeSelector services={selectedServiceObjects} professional={selectedProfessional} appointmentToEdit={appointment} onDateTimeSelected={handleDateTimeSelected} allProfessionals={professionals} onProfessionalSelected={setSelectedProfessional} dateTimeView={dateTimeView} setDateTimeView={setDateTimeView} selectedDate={selectedDate} setSelectedDate={setSelectedDate} weekOffset={weekOffset} setWeekOffset={setWeekOffset} isLoadingSlots={isLoadingSlots} computedSlots={computedSlots} workSchedule={workSchedule} isSlotsModalOpen={isSlotsModalOpen} setIsSlotsModalOpen={setIsSlotsModalOpen} groupedRangeSlots={groupedRangeSlots} isLoadingRange={isLoadingRange} filterStartTime={filterStartTime} setFilterStartTime={setFilterStartTime} filterEndTime={filterEndTime} setFilterEndTime={setFilterEndTime} handleSearchByHour={handleSearchByHour} />
+                                {selectedSlot && date && (
+                                    <div className="mt-4 p-3 bg-pink-50 border border-pink-200 rounded-lg text-center">
+                                        <p className="font-semibold text-pink-800">
+                                            Nueva Hora Seleccionada: <span className="text-lg font-bold">{new Date(date.replace(/-/g, '/')).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })} a las {selectedSlot.time}</span>
+                                        </p>
                                     </div>
+                                )}
+                                <div>
+                                    <label htmlFor="status-select" className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+                                    <select id="status-select" value={status} onChange={e => setStatus(e.target.value as Appointment['status'])} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500"><option value="Pendiente">Pendiente</option><option value="Completada">Completada</option><option value="Cancelada">Cancelada</option></select>
                                 </div>
+                                {error && <p className="text-red-500 text-sm text-center">{error}</p>}
                             </div>
-                            <div>
-                                <label htmlFor="professional-select" className="block text-sm font-medium text-gray-700 mb-1">Profesional</label>
-                                <select id="professional-select" value={selectedProfessional?.id || ''} onChange={e => setSelectedProfessional(professionals.find(p => p.id === e.target.value)!)} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500">{professionals.map(pro => <option key={pro.id} value={pro.id}>{pro.name}</option>)}</select>
-                            </div>
-                            <AppointmentTimeSelector services={selectedServiceObjects} professional={selectedProfessional} appointmentToEdit={appointment} onDateTimeSelected={handleDateTimeSelected} allProfessionals={professionals} onProfessionalSelected={setSelectedProfessional} dateTimeView={dateTimeView} setDateTimeView={setDateTimeView} selectedDate={selectedDate} setSelectedDate={setSelectedDate} weekOffset={weekOffset} setWeekOffset={setWeekOffset} isLoadingSlots={isLoadingSlots} computedSlots={computedSlots} workSchedule={workSchedule} isSlotsModalOpen={isSlotsModalOpen} setIsSlotsModalOpen={setIsSlotsModalOpen} groupedRangeSlots={groupedRangeSlots} isLoadingRange={isLoadingRange} filterStartTime={filterStartTime} setFilterStartTime={setFilterStartTime} filterEndTime={filterEndTime} setFilterEndTime={setFilterEndTime} handleSearchByHour={handleSearchByHour} />
-                            {selectedSlot && date && (
-                                <div className="mt-4 p-3 bg-pink-50 border border-pink-200 rounded-lg text-center">
-                                    <p className="font-semibold text-pink-800">
-                                        Nueva Hora Seleccionada: <span className="text-lg font-bold">{new Date(date.replace(/-/g, '/')).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })} a las {selectedSlot.time}</span>
-                                    </p>
-                                </div>
-                            )}
-                            <div>
-                                <label htmlFor="status-select" className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
-                                <select id="status-select" value={status} onChange={e => setStatus(e.target.value as Appointment['status'])} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500"><option value="Confirmada">Confirmada</option><option value="Completada">Completada</option><option value="Cancelada">Cancelada</option></select>
-                            </div>
-                            {error && <p className="text-red-500 text-sm text-center">{error}</p>}
                         </div>
-                    </div>
-                    <div className="bg-gray-50 px-8 py-4 mt-auto rounded-b-2xl flex justify-end items-center space-x-3 border-t">
-                        <button type="button" onClick={onClose} className="px-5 py-2 text-sm font-semibold text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors">Cancelar</button>
-                        <button type="submit" className="px-5 py-2 text-sm font-semibold text-white bg-pink-600 rounded-lg hover:bg-pink-700 transition-colors">Guardar Cambios</button>
-                    </div>
-                </form>
+                        <div className="bg-gray-50 px-8 py-4 mt-auto rounded-b-2xl flex justify-end items-center space-x-3 border-t">
+                            <button type="button" onClick={onClose} className="px-5 py-2 text-sm font-semibold text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors">Cancelar</button>
+                            <button type="submit" className="px-5 py-2 text-sm font-semibold text-white bg-pink-600 rounded-lg hover:bg-pink-700 transition-colors">Guardar Cambios</button>
+                        </div>
+                    </form>
+                </div>
             </div>
-        </div>
+            <ConfirmationModal
+                isOpen={showSuccessModal}
+                onClose={handleCloseSuccessModal}
+                onConfirm={handleCloseSuccessModal}
+                title="Cita Actualizada"
+                message="Los cambios en la cita se han guardado correctamente."
+                confirmButtonText="Aceptar"
+                confirmButtonColor="green"
+                singleButton={true}
+            />
+        </>
     );
 };
 

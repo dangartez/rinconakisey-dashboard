@@ -10,6 +10,7 @@ import ToggleSwitch from '../components/ui/ToggleSwitch';
 
 type NewPromotionData = Omit<Promotion, 'id' | 'image'> & {
     imageFile?: File;
+    serviceIds: number[];
 };
 
 interface ConfirmationState {
@@ -70,28 +71,42 @@ const PromotionsPage: React.FC = () => {
             imageUrl = urlData.publicUrl;
         }
 
-        const { error: insertError } = await supabase.from('promotions').insert({
+        const { data: newPromotion, error: insertError } = await supabase.from('promotions').insert({
             title: data.title,
             description: data.description,
             original_price: data.originalPrice,
             promo_price: data.promoPrice,
             is_active: data.isActive,
             image_url: imageUrl,
-        });
+        }).select().single();
 
         if (insertError) {
             alert(`Error al crear la promoción: ${insertError.message}`);
-        } else {
-            fetchPromotions();
-            setIsNewModalOpen(false);
+            return;
         }
+        
+        if (newPromotion && data.serviceIds.length > 0) {
+            const promotionServices = data.serviceIds.map(serviceId => ({
+                promotion_id: newPromotion.id,
+                service_id: serviceId,
+            }));
+            const { error: servicesError } = await supabase.from('promotion_services').insert(promotionServices);
+            if (servicesError) {
+                alert(`Error al asociar los servicios: ${servicesError.message}`);
+                // Consider deleting the promotion if services fail to associate
+                return;
+            }
+        }
+
+        fetchPromotions();
+        setIsNewModalOpen(false);
     };
     
     const handleEditClick = (promo: Promotion) => {
         setEditingPromotion(promo);
     };
 
-    const handleUpdatePromotion = async (updatedPromotion: Promotion, newImageFile?: File) => {
+    const handleUpdatePromotion = async (updatedPromotion: Promotion, newImageFile?: File, serviceIds?: number[]) => {
         let imageUrl = updatedPromotion.image;
 
         if (newImageFile) {
@@ -106,7 +121,6 @@ const PromotionsPage: React.FC = () => {
             }
             const { data: urlData } = supabase.storage.from('promotions').getPublicUrl(filePath);
             imageUrl = urlData.publicUrl;
-            // Ideally, you would also delete the old image from storage here
         }
 
         const { error } = await supabase.from('promotions').update({
@@ -120,10 +134,31 @@ const PromotionsPage: React.FC = () => {
 
         if (error) {
             alert(`Error al actualizar la promoción: ${error.message}`);
-        } else {
-            fetchPromotions();
-            setEditingPromotion(null);
+            return;
         }
+
+        if (serviceIds) {
+            const { error: deleteError } = await supabase.from('promotion_services').delete().eq('promotion_id', updatedPromotion.id);
+            if (deleteError) {
+                alert(`Error al actualizar los servicios: ${deleteError.message}`);
+                return;
+            }
+
+            if (serviceIds.length > 0) {
+                const promotionServices = serviceIds.map(serviceId => ({
+                    promotion_id: updatedPromotion.id,
+                    service_id: serviceId,
+                }));
+                const { error: insertError } = await supabase.from('promotion_services').insert(promotionServices);
+                if (insertError) {
+                    alert(`Error al re-asociar los servicios: ${insertError.message}`);
+                    return;
+                }
+            }
+        }
+
+        fetchPromotions();
+        setEditingPromotion(null);
     };
 
     const handleDeleteClick = (promo: Promotion) => {
@@ -132,13 +167,12 @@ const PromotionsPage: React.FC = () => {
             title: 'Eliminar Promoción',
             message: `¿Estás seguro de que quieres eliminar "${promo.title}"? Esta acción no se puede deshacer.`,
             onConfirm: async () => {
-                // First, delete the database record
+                // The ON DELETE CASCADE on the DB will handle promotion_services entries.
                 const { error } = await supabase.from('promotions').delete().eq('id', promo.id);
 
                 if (error) {
                     alert(`Error al eliminar la promoción: ${error.message}`);
                 } else {
-                    // If DB deletion is successful, delete the image from storage
                     if (promo.image) {
                         const bucketName = 'promotions';
                         const urlParts = promo.image.split(`/${bucketName}/`);
@@ -164,7 +198,6 @@ const PromotionsPage: React.FC = () => {
         if (error) {
             alert('Error al cambiar el estado.');
         } else {
-            // Optimistic update in UI, or re-fetch
             setPromotions(promotions.map(p => p.id === promoId ? { ...p, isActive: newStatus } : p));
         }
     };

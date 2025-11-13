@@ -45,6 +45,7 @@ const ProfessionalsPage: React.FC = () => {
     useEffect(() => {
         fetchProfessionals();
         fetchServices();
+        fetchAppointments();
     }, []);
 
     const fetchProfessionals = async () => {
@@ -72,21 +73,79 @@ const ProfessionalsPage: React.FC = () => {
         }
     };
 
+    const fetchAppointments = async () => {
+        const { data, error } = await supabase
+            .from('appointments')
+            .select(`
+                *,
+                client:clients(id, full_name, phone, email),
+                service:services(id, name, category, duration, price),
+                professional:professionals(id, full_name, color)
+            `)
+            .order('start_time', { ascending: false });
+        
+        if (error) {
+            console.error('Error fetching appointments:', error);
+        } else {
+            console.log('Appointments data from DB:', data); // Debug log
+            // Transform the data to match the expected Appointment type
+            const transformedAppointments = data.map(app => ({
+                id: app.id,
+                start_time: app.start_time,
+                end_time: app.end_time,
+                date: new Date(app.start_time).toISOString().split('T')[0],
+                startTime: new Date(app.start_time).toTimeString().slice(0, 5),
+                endTime: new Date(app.end_time).toTimeString().slice(0, 5),
+                status: app.status,
+                client: {
+                    id: app.client.id,
+                    full_name: app.client.full_name,
+                    name: app.client.full_name,
+                    phone: app.client.phone,
+                    email: app.client.email,
+                    created_at: '',
+                    nickname: ''
+                },
+                service: {
+                    id: app.service.id,
+                    name: app.service.name,
+                    category: app.service.category,
+                    duration: app.service.duration,
+                    price: app.service.price,
+                    break_time: 0
+                },
+                professional: {
+                    id: app.professional.id,
+                    full_name: app.professional.full_name,
+                    name: app.professional.full_name,
+                    color: app.professional.color,
+                    email: '',
+                    phone: '',
+                    role: 'Profesional',
+                    creationDate: '',
+                    status: 'active'
+                }
+            }));
+            console.log('Transformed appointments:', transformedAppointments); // Debug log
+            setAppointments(transformedAppointments as Appointment[]);
+        }
+    };
+
     const filteredProfessionals = useMemo(() => {
-        const professionalsToFilter = [...professionals].sort((a,b) => a.name.localeCompare(b.name));
+        const professionalsToFilter = [...professionals].sort((a,b) => a.full_name.localeCompare(b.full_name));
 
         if (!searchTerm.trim()) return professionalsToFilter;
 
         const lowercasedFilter = searchTerm.toLowerCase();
         return professionalsToFilter.filter((pro: Professional) =>
-            (pro.name || '').toLowerCase().includes(lowercasedFilter) ||
+            (pro.full_name || '').toLowerCase().includes(lowercasedFilter) ||
             (pro.phone || '').includes(lowercasedFilter) ||
             (pro.email || '').toLowerCase().includes(lowercasedFilter)
         );
     }, [searchTerm, professionals]);
 
     const handleAddProfessional = async (newProfessionalData: ProfessionalToSave) => {
-        const { avatarFile, name, assignedServices, schedules, overrides, ...restData } = newProfessionalData;
+        const { avatarFile, full_name: fullName, assignedServices, schedules, overrides, ...restData } = newProfessionalData;
         
         let avatar_url: string | undefined = undefined;
 
@@ -110,7 +169,7 @@ const ProfessionalsPage: React.FC = () => {
         // 2. Insert professional data
         const professionalToInsert = {
             ...restData,
-            full_name: name,
+            full_name: fullName,
             avatar_url,
         };
 
@@ -178,7 +237,7 @@ const ProfessionalsPage: React.FC = () => {
         setConfirmation({
             isOpen: true,
             title: 'Eliminar Profesional',
-            message: `¿Estás seguro de que quieres eliminar a ${pro.name}? Esta acción no se puede deshacer.`,
+            message: `¿Estás seguro de que quieres eliminar a ${pro.full_name}? Esta acción no se puede deshacer.`,
             onConfirm: async () => {
                 // This RPC function should handle all dependencies (skills, schedules, etc.)
                 const { error } = await supabase.rpc('delete_professional_with_dependencies', { p_professional_id: pro.id });
@@ -202,7 +261,7 @@ const ProfessionalsPage: React.FC = () => {
     };
 
     const handleUpdateProfessional = async (updatedPro: Professional, schedules: WeeklySchedule, overrides: ScheduleOverride[], avatarFile?: File) => {
-        const { id, name, email, phone, role, color, status, assignedServices, avatar } = updatedPro;
+        const { id, full_name: fullName, email, phone, role, color, status, assignedServices, avatar } = updatedPro;
 
         let avatar_url = avatar;
 
@@ -232,7 +291,7 @@ const ProfessionalsPage: React.FC = () => {
         // 2. Update professional data
         const { error: profileError } = await supabase
             .from('professionals')
-            .update({ full_name: name, email, phone, role, color, status, avatar_url })
+            .update({ full_name: fullName, email, phone, role, color, status, avatar_url })
             .eq('id', id);
 
         if (profileError) {
@@ -331,11 +390,11 @@ const ProfessionalsPage: React.FC = () => {
                                     <tr key={pro.id} className={`border-b border-gray-100 last:border-b-0 transition-colors ${pro.status === 'inactive' ? 'bg-red-500/10 hover:bg-red-500/20' : 'hover:bg-gray-50/50'}`}>
                                         <td className="p-4 text-gray-800 font-medium flex items-center">
                                             <img 
-                                                src={pro.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(pro.name)}&background=random&color=fff`} 
-                                                alt={pro.name} 
+                                                src={pro.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(pro.full_name)}&background=random&color=fff`}
+                                                alt={pro.full_name}
                                                 className="h-10 w-10 rounded-full mr-4 object-cover bg-gray-200" 
                                             />
-                                            {pro.name}
+                                            {pro.full_name}
                                         </td>
                                         <td className="p-4 text-gray-600">{pro.email}</td>
                                         <td className="p-4 text-gray-600">{pro.phone}</td>
@@ -352,7 +411,7 @@ const ProfessionalsPage: React.FC = () => {
                                         <td className="p-4 whitespace-nowrap space-x-4">
                                             <button onClick={() => handleViewAgendaClick(pro)} className="text-blue-600 hover:underline text-sm font-medium">Ver Agenda</button>
                                             <button onClick={() => handleEditClick(pro)} className="text-pink-600 hover:underline text-sm font-medium">Editar</button>
-                                            <button onClick={() => handleDeleteClick(pro)} className="text-gray-500 hover:text-red-600 p-1 rounded-full transition-colors" aria-label={`Eliminar ${pro.name}`}>
+                                            <button onClick={() => handleDeleteClick(pro)} className="text-gray-500 hover:text-red-600 p-1 rounded-full transition-colors" aria-label={`Eliminar ${pro.full_name}`}>
                                                 <TrashIcon className="h-5 w-5" />
                                             </button>
                                         </td>
@@ -389,13 +448,16 @@ const ProfessionalsPage: React.FC = () => {
                 </>
             )}
              {editingAppointment && (
-                <EditAppointmentModal 
-                    isOpen={!!editingAppointment}
-                    onClose={() => setEditingAppointment(null)}
-                    appointment={editingAppointment}
-                    onSave={handleUpdateAppointment}
-                />
-            )}
+               <EditAppointmentModal
+                   isOpen={!!editingAppointment}
+                   onClose={() => setEditingAppointment(null)}
+                   appointment={editingAppointment}
+                   onSave={handleUpdateAppointment}
+                   clients={[]}
+                   services={services}
+                   professionals={professionals}
+               />
+           )}
             <ConfirmationModal
                 isOpen={confirmation.isOpen}
                 onClose={() => setConfirmation({ ...confirmation, isOpen: false })}

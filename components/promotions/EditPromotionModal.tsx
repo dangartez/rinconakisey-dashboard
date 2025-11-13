@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Promotion } from '../../types';
+import { Promotion, Service } from '../../types';
 import { UploadIcon } from '../icons/Icons';
 import ToggleSwitch from '../ui/ToggleSwitch';
+import { supabase } from '../../lib/supabaseClient';
 
 interface EditPromotionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (promotion: Promotion, newImageFile?: File) => void;
+  onSave: (promotion: Promotion, newImageFile?: File, serviceIds?: number[]) => void;
   promotion: Promotion;
 }
 
@@ -22,8 +23,37 @@ const EditPromotionModal: React.FC<EditPromotionModalProps> = ({ isOpen, onClose
     const [initialState, setInitialState] = useState<any>({});
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    const [services, setServices] = useState<Service[]>([]);
+    const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
+    const [searchTerm, setSearchTerm] = useState('');
+
     useEffect(() => {
         if (isOpen && promotion) {
+            const fetchAssociatedServices = async () => {
+                const { data: allServices, error: servicesError } = await supabase.from('services').select('id, name');
+                if (servicesError) {
+                    console.error('Error fetching services:', servicesError);
+                } else {
+                    setServices(allServices as Service[]);
+                }
+
+                const { data: associated, error: associatedError } = await supabase
+                    .from('promotion_services')
+                    .select('service_id')
+                    .eq('promotion_id', promotion.id);
+                
+                if (associatedError) {
+                    console.error('Error fetching associated services:', associatedError);
+                } else {
+                    const ids = associated.map(item => item.service_id);
+                    setSelectedServiceIds(ids);
+                    // Store initial selected service IDs for dirty check
+                    setInitialState(prev => ({ ...prev, selectedServiceIds: ids }));
+                }
+            };
+
+            fetchAssociatedServices();
+
             const state = {
                 title: promotion.title,
                 description: promotion.description,
@@ -39,22 +69,38 @@ const EditPromotionModal: React.FC<EditPromotionModalProps> = ({ isOpen, onClose
             setIsActive(state.isActive);
             setImagePreview(state.image);
             setImageFile(undefined);
-            setInitialState(state);
+            setInitialState(prev => ({ ...prev, ...state })); // Merge with existing initialState
+            setSearchTerm('');
             setError('');
         }
     }, [isOpen, promotion]);
 
+    const filteredServices = useMemo(() => {
+        return services.filter(service =>
+            service.name.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+    }, [services, searchTerm]);
+
     const isDirty = useMemo(() => {
-        if (!initialState.title) return false;
-        return (
+        if (!initialState.title) return false; // Guard for initial load
+
+        // Compare primitive fields
+        const primitiveFieldsChanged = (
             initialState.title !== title ||
             initialState.description !== description ||
             initialState.originalPrice !== originalPrice ||
             initialState.promoPrice !== promoPrice ||
             initialState.isActive !== isActive ||
-            imageFile !== undefined
+            imageFile !== undefined // New image file selected
         );
-    }, [title, description, originalPrice, promoPrice, isActive, imageFile, initialState]);
+
+        // Compare selected service IDs (order-independent)
+        const initialServiceIdsSorted = [...(initialState.selectedServiceIds || [])].sort();
+        const currentServiceIdsSorted = [...selectedServiceIds].sort();
+        const servicesChanged = initialServiceIdsSorted.join(',') !== currentServiceIdsSorted.join(',');
+
+        return primitiveFieldsChanged || servicesChanged;
+    }, [title, description, originalPrice, promoPrice, isActive, imageFile, initialState, selectedServiceIds]);
 
     if (!isOpen) return null;
 
@@ -65,6 +111,14 @@ const EditPromotionModal: React.FC<EditPromotionModalProps> = ({ isOpen, onClose
             const previewUrl = URL.createObjectURL(file);
             setImagePreview(previewUrl);
         }
+    };
+
+    const handleServiceToggle = (serviceId: number) => {
+        setSelectedServiceIds(prev => 
+            prev.includes(serviceId) 
+                ? prev.filter(id => id !== serviceId)
+                : [...prev, serviceId]
+        );
     };
 
     const handleCloseAttempt = () => {
@@ -87,6 +141,10 @@ const EditPromotionModal: React.FC<EditPromotionModalProps> = ({ isOpen, onClose
             setError('Los precios deben ser números positivos.');
             return;
         }
+        if (selectedServiceIds.length === 0) {
+            setError('Debes seleccionar al menos un servicio para la promoción.');
+            return;
+        }
 
         setError('');
         const updatedPromotion = {
@@ -98,7 +156,7 @@ const EditPromotionModal: React.FC<EditPromotionModalProps> = ({ isOpen, onClose
             isActive: isActive,
             image: imagePreview || promotion.image,
         };
-        onSave(updatedPromotion, imageFile);
+        onSave(updatedPromotion, imageFile, selectedServiceIds);
     };
 
     return (
@@ -133,6 +191,31 @@ const EditPromotionModal: React.FC<EditPromotionModalProps> = ({ isOpen, onClose
                                 <label htmlFor="promo-price-edit" className="block text-sm font-medium text-gray-700 mb-1">Precio Promoción (€) <span className="text-red-500">*</span></label>
                                 <input type="number" id="promo-price-edit" value={promoPrice} onChange={e => setPromoPrice(e.target.value)} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500" min="0" />
                             </div>
+
+                            <div className="md:col-span-2">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Servicios Incluidos <span className="text-red-500">*</span></label>
+                                <input 
+                                    type="text"
+                                    placeholder="Buscar servicios..."
+                                    value={searchTerm}
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                    className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg mb-2 focus:outline-none focus:ring-2 focus:ring-pink-500"
+                                />
+                                <div className="max-h-40 overflow-y-auto bg-white border border-gray-300 rounded-lg p-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {filteredServices.map(service => (
+                                        <label key={service.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-gray-50 cursor-pointer">
+                                            <input 
+                                                type="checkbox"
+                                                checked={selectedServiceIds.includes(service.id)}
+                                                onChange={() => handleServiceToggle(service.id)}
+                                                className="h-4 w-4 rounded border-gray-300 text-pink-600 focus:ring-pink-500"
+                                            />
+                                            <span className="text-sm text-gray-800">{service.name}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+
                             <div className="md:col-span-2">
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Imagen</label>
                                 <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageChange} className="hidden" />

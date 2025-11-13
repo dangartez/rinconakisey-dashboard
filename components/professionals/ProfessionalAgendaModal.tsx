@@ -13,6 +13,7 @@ interface ProfessionalAgendaModalProps {
 }
 
 const statusColors: Record<Appointment['status'], string> = {
+    'Pendiente': 'bg-blue-100 text-blue-800',
     'Confirmada': 'bg-blue-100 text-blue-800',
     'Completada': 'bg-green-100 text-green-800',
     'Cancelada': 'bg-red-100 text-red-800',
@@ -55,6 +56,16 @@ const ProfessionalAgendaModal: React.FC<ProfessionalAgendaModalProps> = ({
         setFilters(prev => ({...prev, [name]: value}));
     };
 
+    const handleClearFilters = () => {
+        setFilters({
+            singleDate: '',
+            startDate: '',
+            endDate: '',
+            time: '',
+            status: 'Todas',
+        });
+    };
+
     const handleDeleteClick = (appointment: Appointment) => {
         setAppointmentToDelete(appointment);
     };
@@ -95,7 +106,7 @@ const ProfessionalAgendaModal: React.FC<ProfessionalAgendaModalProps> = ({
                     onClick={(e) => e.stopPropagation()}
                 >
                     <div className="p-6 border-b sticky top-0 bg-white z-10">
-                        <h2 className="text-3xl font-bold text-gray-900">Agenda de {professional.name}</h2>
+                        <h2 className="text-3xl font-bold text-gray-900">Agenda de {professional.full_name}</h2>
                     </div>
                     
                     <div className="p-6 bg-gray-50/70 border-b flex flex-wrap items-end gap-4 text-sm">
@@ -171,10 +182,17 @@ const ProfessionalAgendaModal: React.FC<ProfessionalAgendaModalProps> = ({
                         </div>
                     </div>
                     
-                    <div className="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end items-center border-t">
-                        <button 
+                    <div className="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-between items-center border-t">
+                        <button
                             type="button"
-                            onClick={onClose} 
+                            onClick={handleClearFilters}
+                            className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+                        >
+                            Limpiar Filtros
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onClose}
                             className="px-5 py-2 text-sm font-semibold text-white bg-pink-600 rounded-lg hover:bg-pink-700 transition-colors"
                         >
                             Cerrar

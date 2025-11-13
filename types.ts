@@ -32,6 +32,7 @@ export interface Client {
   nickname: string;
   claim_code?: string;
   has_debt?: boolean;
+  has_bono?: boolean;
 }
 
 export interface Appointment {
@@ -41,7 +42,8 @@ export interface Appointment {
   client: Client;
   service: Service;
   professional: Professional;
-  status: 'Pendiente' | 'Completada' | 'Cancelada';
+  status: 'Pendiente' | 'Confirmada' | 'Completada' | 'Cancelada';
+  booking_group_id?: string; // Optional UUID for grouping appointments
 }
 
 export interface Promotion {
