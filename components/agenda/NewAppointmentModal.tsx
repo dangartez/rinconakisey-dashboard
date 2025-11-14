@@ -28,6 +28,7 @@ interface NewAppointmentModalProps {
 const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({ isOpen, onClose, onSave, clients, services, professionals }) => {
     // Main form state
     const [selectedProfessional, setSelectedProfessional] = useState<Professional | null>(professionals[0] || null);
+    const [selectedProfessionalIds, setSelectedProfessionalIds] = useState<string[]>([]);
     const [status, setStatus] = useState<Appointment['status']>('Confirmada');
     const [selectedClient, setSelectedClient] = useState<Client | null>(null);
     const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
@@ -61,6 +62,7 @@ const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({ isOpen, onClo
         if (!isOpen) {
             // Reset all state variables to their initial values
             setSelectedProfessional(professionals[0] || null);
+            setSelectedProfessionalIds([]);
             setStatus('Confirmada');
             setSelectedClient(null);
             setSelectedServiceIds([]);
@@ -87,6 +89,7 @@ const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({ isOpen, onClo
 
 
     const selectedServiceObjects = useMemo(() => services.filter(s => selectedServiceIds.includes(s.id)).sort((a, b) => a.name.localeCompare(b.name)), [selectedServiceIds, services]);
+    const isDuoService = useMemo(() => selectedServiceObjects.length > 0 && selectedServiceObjects.every(s => s.required_professionals > 1), [selectedServiceObjects]);
 
     useEffect(() => {
         if (clientSearch.trim().length > 0) {
@@ -117,6 +120,12 @@ const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({ isOpen, onClo
     };
 
     useEffect(() => {
+        // This effect is for single professional selection, disable for duo service
+        if (isDuoService) {
+            setComputedSlots([]);
+            setWorkSchedule(null);
+            return;
+        }
         const selectedServiceObjects = services.filter(s => selectedServiceIds.includes(s.id));
         if (!isOpen || selectedServiceObjects.length === 0 || dateTimeView !== 'calendar' || !selectedProfessional) {
             setComputedSlots([]);
@@ -196,7 +205,7 @@ const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({ isOpen, onClo
         };
 
         fetchAndComputeSlots();
-    }, [isOpen, selectedDate, selectedProfessional, selectedServiceIds, dateTimeView, services]);
+    }, [isOpen, selectedDate, selectedProfessional, selectedServiceIds, dateTimeView, services, isDuoService]);
 
     // --- HANDLERS & MEMOS ---
     const handleServiceToggle = (serviceId: number) => setSelectedServiceIds(prev => prev.includes(serviceId) ? prev.filter(id => id !== serviceId) : [...prev, serviceId]);
@@ -253,10 +262,17 @@ const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({ isOpen, onClo
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!selectedClient || !selectedProfessional || !date || !selectedSlot) {
+        const professionalToSave = isDuoService ? { id: selectedProfessionalIds.join(','), full_name: 'Duo Service' } as any : selectedProfessional;
+
+        if (!selectedClient || !professionalToSave || !date || !selectedSlot) {
             setError('Todos los campos y la selección de hora son obligatorios.');
             return;
         }
+        if (isDuoService && selectedProfessionalIds.length < 2) {
+            setError('Debe seleccionar al menos 2 profesionales para un servicio Dúo.');
+            return;
+        }
+
         const [hours, minutes] = selectedSlot.time.split(':').map(Number);
         const newStartDate = new Date(date);
         newStartDate.setHours(hours, minutes, 0, 0);
@@ -265,9 +281,15 @@ const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({ isOpen, onClo
         onSave({
             client: selectedClient,
             services: selectedServiceObjects,
-            professional: selectedProfessional,
+            professional: professionalToSave, // This will need to be handled in the parent
             startTime: newStartDate,
         });
+    };
+
+    const handleProfessionalIdToggle = (id: string) => {
+        setSelectedProfessionalIds(prev => 
+            prev.includes(id) ? prev.filter(pId => pId !== id) : [...prev, id]
+        );
     };
 
     // --- RENDER ---
@@ -323,7 +345,26 @@ const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({ isOpen, onClo
                             </div>
                             <div>
                                 <label htmlFor="professional-select" className="block text-sm font-medium text-gray-700 mb-1">Profesional</label>
-                                <select id="professional-select" value={selectedProfessional?.id || ''} onChange={e => setSelectedProfessional(professionals.find(p => p.id === e.target.value)!)} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500">{professionals.map(pro => <option key={pro.id} value={pro.id}>{pro.name}</option>)}</select>
+                                {isDuoService ? (
+                                    <div className="p-3 border border-gray-200 rounded-lg space-y-2">
+                                        <p className="text-xs text-gray-500">Selecciona los profesionales para el servicio Dúo:</p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {professionals.map(pro => (
+                                                <label key={pro.id} className={`flex items-center space-x-2 p-2 rounded-lg cursor-pointer transition-colors ${selectedProfessionalIds.includes(pro.id) ? 'bg-pink-100' : 'hover:bg-gray-50'}`}>
+                                                    <input 
+                                                        type="checkbox"
+                                                        checked={selectedProfessionalIds.includes(pro.id)}
+                                                        onChange={() => handleProfessionalIdToggle(pro.id)}
+                                                        className="h-4 w-4 rounded text-pink-600 border-gray-300 focus:ring-pink-500"
+                                                    />
+                                                    <span className="text-sm font-medium text-gray-800">{pro.name}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <select id="professional-select" value={selectedProfessional?.id || ''} onChange={e => setSelectedProfessional(professionals.find(p => p.id === e.target.value)!)} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500">{professionals.map(pro => <option key={pro.id} value={pro.id}>{pro.name}</option>)}</select>
+                                )}
                             </div>
                             <AppointmentTimeSelector services={selectedServiceObjects} professional={selectedProfessional} onDateTimeSelected={handleDateTimeSelected} allProfessionals={professionals} onProfessionalSelected={setSelectedProfessional} dateTimeView={dateTimeView} setDateTimeView={setDateTimeView} selectedDate={selectedDate} setSelectedDate={setSelectedDate} weekOffset={weekOffset} setWeekOffset={setWeekOffset} isLoadingSlots={isLoadingSlots} computedSlots={computedSlots} workSchedule={workSchedule} isSlotsModalOpen={isSlotsModalOpen} setIsSlotsModalOpen={setIsSlotsModalOpen} groupedRangeSlots={groupedRangeSlots} isLoadingRange={isLoadingRange} filterStartTime={filterStartTime} setFilterStartTime={setFilterStartTime} filterEndTime={filterEndTime} setFilterEndTime={setFilterEndTime} handleSearchByHour={handleSearchByHour} />
                             {selectedSlot && date && (

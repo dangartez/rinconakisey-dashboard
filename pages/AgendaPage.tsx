@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { Appointment, Professional, Client, Service } from '../types';
 import { ChevronDownIcon, CheckIcon } from '../components/icons/Icons';
@@ -251,15 +251,20 @@ const AgendaPage: React.FC = () => {
         }
     }, [activeView]);
 
-    const fetchAppointments = async () => {
-        const { data, error } = await supabase.from('appointments').select(`*,
-            client:clients_with_debt_status(id, name:full_name, has_debt),
-            professional:professionals(id, name:full_name, color),
-            service:services(id, name, duration)`)
-            .not('status', 'eq', 'Cancelada');
-        if (error) console.error('Error fetching appointments:', error);
-        else setAppointments(data as any[] || []);
-    };
+    const fetchAppointments = useCallback(async (startDate: Date, endDate: Date) => {
+        const { data, error } = await supabase.rpc('get_unified_agenda_appointments', {
+            p_start_date: startDate.toISOString().split('T')[0],
+            p_end_date: endDate.toISOString().split('T')[0],
+        });
+
+        if (error) {
+            console.error('Error fetching unified appointments:', error);
+            setAppointments([]);
+        } else {
+            // El RPC devuelve los objetos ya anidados, por lo que el casting directo debería funcionar
+            setAppointments(data as any[] || []);
+        }
+    }, []);
 
     const fetchProfessionals = async () => {
         const { data, error } = await supabase.from('professionals').select('*, name:full_name, professional_skills(service_id)');
@@ -284,11 +289,28 @@ const AgendaPage: React.FC = () => {
     };
 
     useEffect(() => {
-        fetchAppointments();
+        // Determinar el rango de fechas basado en la vista actual
+        let startDate = new Date(currentDate);
+        let endDate = new Date(currentDate);
+
+        if (activeView === 'Hoy') {
+            // No es necesario cambiar nada, el día es el mismo
+        } else if (activeView === 'Semanal') {
+            endDate.setDate(startDate.getDate() + 6);
+        } else if (activeView === 'TODAS') { // Asumimos que 'TODAS' es la vista mensual
+            startDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+            endDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+        }
+        
+        fetchAppointments(startDate, endDate);
+    }, [currentDate, activeView, fetchAppointments]);
+
+    useEffect(() => {
+        // Estas llamadas solo se hacen una vez al montar el componente
         fetchProfessionals();
         fetchClients();
         fetchServices();
-    }, []); // WARNING: This is not ideal, fetch functions should be dependencies.
+    }, []);
 
     const allProfessionalIds = useMemo(() => professionals.map(p => p.id), [professionals]);
     const areAllSelected = useMemo(() => selectedProfessionalIds.length === allProfessionalIds.length, [selectedProfessionalIds, allProfessionalIds]);
@@ -517,42 +539,67 @@ const AgendaPage: React.FC = () => {
     const handleAddNewAppointment = async (data: {
         client: Client;
         services: Service[];
-        professional: Professional;
+        professional: Professional; // For Duo, professional.id will be a comma-separated string of IDs
         startTime: Date;
     }) => {
         const { client, services, professional, startTime } = data;
+        const isDuo = professional.full_name === 'Duo Service';
 
-        const appointmentsToInsert = [];
-        let runningTime = startTime;
-        const booking_group_id = services.length > 1 ? crypto.randomUUID() : null;
+        if (isDuo) {
+            // Logic for Duo Service
+            const professionalIds = professional.id.split(',');
+            const serviceId = services[0].id; // Assuming one duo service at a time
 
-        for (const service of services) {
-            const endTime = new Date(runningTime.getTime() + service.duration * 60000);
-            
-            const newAppointment: any = {
-                client_id: client.id,
-                service_id: service.id,
-                professional_id: professional.id,
-                start_time: runningTime.toISOString(),
-                end_time: endTime.toISOString(),
-                status: 'Confirmada',
-            };
+            // We need a new RPC function for this or adapt the existing one.
+            // Let's assume a new one: create_manual_duo_appointment
+            const { error } = await supabase.rpc('create_manual_duo_appointment', {
+                p_client_id: client.id,
+                p_service_id: serviceId,
+                p_start_time: startTime.toISOString(),
+                p_professional_ids: professionalIds
+            });
 
-            if (booking_group_id) {
-                newAppointment.booking_group_id = booking_group_id;
+            if (error) {
+                alert(`Error al crear la cita Dúo: ${error.message}`);
+            } else {
+                fetchAppointments(currentDate, new Date(currentDate.getTime() + 7 * 24 * 60 * 60 * 1000)); // Re-fetch
+                setIsNewAppointmentModalOpen(false);
             }
 
-            appointmentsToInsert.push(newAppointment);
-            runningTime = endTime; // The next service starts when the previous one ends
-        }
-
-        const { error } = await supabase.from('appointments').insert(appointmentsToInsert);
-
-        if (error) {
-            alert(`Error al crear la cita: ${error.message}`);
         } else {
-            fetchAppointments();
-            setIsNewAppointmentModalOpen(false);
+            // Existing logic for single appointments
+            const appointmentsToInsert = [];
+            let runningTime = startTime;
+            const booking_group_id = services.length > 1 ? crypto.randomUUID() : null;
+
+            for (const service of services) {
+                const endTime = new Date(runningTime.getTime() + service.duration * 60000);
+                
+                const newAppointment: any = {
+                    client_id: client.id,
+                    service_id: service.id,
+                    professional_id: professional.id,
+                    start_time: runningTime.toISOString(),
+                    end_time: endTime.toISOString(),
+                    status: 'Confirmada',
+                };
+
+                if (booking_group_id) {
+                    newAppointment.booking_group_id = booking_group_id;
+                }
+
+                appointmentsToInsert.push(newAppointment);
+                runningTime = endTime; // The next service starts when the previous one ends
+            }
+
+            const { error } = await supabase.from('appointments').insert(appointmentsToInsert);
+
+            if (error) {
+                alert(`Error al crear la cita: ${error.message}`);
+            } else {
+                fetchAppointments(currentDate, new Date(currentDate.getTime() + 7 * 24 * 60 * 60 * 1000)); // Re-fetch
+                setIsNewAppointmentModalOpen(false);
+            }
         }
     };
 

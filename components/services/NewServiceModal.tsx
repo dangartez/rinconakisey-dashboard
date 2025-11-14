@@ -21,6 +21,7 @@ const NewServiceModal: React.FC<NewServiceModalProps> = ({ isOpen, onClose, onSa
     const [duration, setDuration] = useState('');
     const [breakDuration, setBreakDuration] = useState(0);
     const [price, setPrice] = useState('');
+    const [requiredProfessionals, setRequiredProfessionals] = useState(1);
     const [error, setError] = useState('');
 
     useEffect(() => {
@@ -31,6 +32,7 @@ const NewServiceModal: React.FC<NewServiceModalProps> = ({ isOpen, onClose, onSa
                 setDuration('');
                 setBreakDuration(0);
                 setPrice('');
+                setRequiredProfessionals(1);
                 setError('');
             }, 200);
         }
@@ -42,9 +44,10 @@ const NewServiceModal: React.FC<NewServiceModalProps> = ({ isOpen, onClose, onSa
             selectedCategory !== null ||
             duration !== '' ||
             breakDuration !== 0 ||
-            price !== ''
+            price !== '' ||
+            requiredProfessionals !== 1
         );
-    }, [name, selectedCategory, duration, breakDuration, price]);
+    }, [name, selectedCategory, duration, breakDuration, price, requiredProfessionals]);
 
     const handleCloseAttempt = () => {
         if (isDirty) {
@@ -62,8 +65,8 @@ const NewServiceModal: React.FC<NewServiceModalProps> = ({ isOpen, onClose, onSa
             setError('Todos los campos excepto Tiempo de Break son obligatorios.');
             return;
         }
-        if (isNaN(Number(duration)) || isNaN(Number(price)) || Number(duration) < 0 || Number(price) < 0) {
-            setError('Duración y precio deben ser números positivos.');
+        if (isNaN(Number(duration)) || isNaN(Number(price)) || Number(duration) < 0 || Number(price) < 0 || Number(requiredProfessionals) < 1) {
+            setError('Duración, precio y número de profesionales deben ser números positivos.');
             return;
         }
 
@@ -74,7 +77,8 @@ const NewServiceModal: React.FC<NewServiceModalProps> = ({ isOpen, onClose, onSa
             duration: Number(duration),
             breakDuration: Number(breakDuration),
             price: Number(price),
-        });
+            required_professionals: Number(requiredProfessionals),
+        } as any);
     };
 
     if (!isOpen) return null;
@@ -110,7 +114,7 @@ const NewServiceModal: React.FC<NewServiceModalProps> = ({ isOpen, onClose, onSa
                                     placeholder="Buscar o seleccionar categoría..."
                                 />
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label htmlFor="duration" className="block text-sm font-medium text-gray-700 mb-1">Duración (min)</label>
                                     <input type="number" id="duration" value={duration} onChange={e => setDuration(e.target.value)} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500" min="0" />
@@ -126,9 +130,15 @@ const NewServiceModal: React.FC<NewServiceModalProps> = ({ isOpen, onClose, onSa
                                         <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
                                     </div>
                                 </div>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label htmlFor="price" className="block text-sm font-medium text-gray-700 mb-1">Precio (€)</label>
                                     <input type="number" id="price" value={price} onChange={e => setPrice(e.target.value)} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500" min="0" />
+                                </div>
+                                <div>
+                                    <label htmlFor="required-professionals" className="block text-sm font-medium text-gray-700 mb-1">Nº Profesionales</label>
+                                    <input type="number" id="required-professionals" value={requiredProfessionals} onChange={e => setRequiredProfessionals(Number(e.target.value))} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500" min="1" />
                                 </div>
                             </div>
                             {error && <p className="text-red-500 text-sm mt-2">{error}</p>}

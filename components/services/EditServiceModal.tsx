@@ -21,18 +21,24 @@ const EditServiceModal: React.FC<EditServiceModalProps> = ({ isOpen, onClose, on
     const [duration, setDuration] = useState('');
     const [breakDuration, setBreakDuration] = useState(0);
     const [price, setPrice] = useState('');
+    const [requiredProfessionals, setRequiredProfessionals] = useState(1);
     const [error, setError] = useState('');
-    const [initialState, setInitialState] = useState<Service | null>(null);
+    const [initialState, setInitialState] = useState<Service & { required_professionals?: number } | null>(null);
 
     useEffect(() => {
         if (service) {
-            setName(service.name);
-            const currentCategory = categories.find(c => c.id === service.category_id) || null;
+            const fullService = {
+                ...service,
+                required_professionals: service.required_professionals || 1
+            };
+            setName(fullService.name);
+            const currentCategory = categories.find(c => c.id === fullService.category_id) || null;
             setSelectedCategory(currentCategory);
-            setDuration(String(service.duration));
-            setBreakDuration(service.breakDuration);
-            setPrice(String(service.price));
-            setInitialState(service);
+            setDuration(String(fullService.duration));
+            setBreakDuration(fullService.breakDuration);
+            setPrice(String(fullService.price));
+            setRequiredProfessionals(fullService.required_professionals);
+            setInitialState(fullService);
         }
     }, [service, categories]);
 
@@ -43,9 +49,10 @@ const EditServiceModal: React.FC<EditServiceModalProps> = ({ isOpen, onClose, on
             initialState.category_id !== selectedCategory?.id ||
             initialState.duration !== Number(duration) ||
             initialState.breakDuration !== breakDuration ||
-            initialState.price !== Number(price)
+            initialState.price !== Number(price) ||
+            initialState.required_professionals !== requiredProfessionals
         );
-    }, [name, selectedCategory, duration, breakDuration, price, initialState]);
+    }, [name, selectedCategory, duration, breakDuration, price, requiredProfessionals, initialState]);
 
     const handleCloseAttempt = () => {
         if (isDirty) {
@@ -65,8 +72,8 @@ const EditServiceModal: React.FC<EditServiceModalProps> = ({ isOpen, onClose, on
             setError('Todos los campos excepto Tiempo de Break son obligatorios.');
             return;
         }
-        if (isNaN(Number(duration)) || isNaN(Number(price)) || Number(duration) < 0 || Number(price) < 0) {
-            setError('Duración y precio deben ser números positivos.');
+        if (isNaN(Number(duration)) || isNaN(Number(price)) || Number(duration) < 0 || Number(price) < 0 || Number(requiredProfessionals) < 1) {
+            setError('Duración, precio y número de profesionales deben ser números positivos.');
             return;
         }
 
@@ -79,6 +86,7 @@ const EditServiceModal: React.FC<EditServiceModalProps> = ({ isOpen, onClose, on
             duration: Number(duration),
             breakDuration: Number(breakDuration),
             price: Number(price),
+            required_professionals: Number(requiredProfessionals),
         });
     };
 
@@ -115,7 +123,7 @@ const EditServiceModal: React.FC<EditServiceModalProps> = ({ isOpen, onClose, on
                                     placeholder="Buscar o seleccionar categoría..."
                                 />
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label htmlFor="duration-edit" className="block text-sm font-medium text-gray-700 mb-1">Duración (min)</label>
                                     <input type="number" id="duration-edit" value={duration} onChange={e => setDuration(e.target.value)} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500" min="0" />
@@ -131,9 +139,15 @@ const EditServiceModal: React.FC<EditServiceModalProps> = ({ isOpen, onClose, on
                                         <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
                                     </div>
                                 </div>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label htmlFor="price-edit" className="block text-sm font-medium text-gray-700 mb-1">Precio (€)</label>
                                     <input type="number" id="price-edit" value={price} onChange={e => setPrice(e.target.value)} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500" min="0" />
+                                </div>
+                                <div>
+                                    <label htmlFor="required-professionals-edit" className="block text-sm font-medium text-gray-700 mb-1">Nº Profesionales</label>
+                                    <input type="number" id="required-professionals-edit" value={requiredProfessionals} onChange={e => setRequiredProfessionals(Number(e.target.value))} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500" min="1" />
                                 </div>
                             </div>
                             {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
