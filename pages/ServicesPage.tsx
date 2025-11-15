@@ -108,17 +108,22 @@ const ServicesPage: React.FC = () => {
         });
     };
 
-    const handleAddService = async (newServiceData: Omit<Service, 'id' | 'category'> & { category_id: number | null }) => {
-        const { breakDuration, ...rest } = newServiceData;
-        const serviceToInsert = {
-            ...rest,
-            break_time: breakDuration,
-        };
+    const handleAddService = async (newServiceData: Omit<Service, 'id' | 'category'> & { category_id: number | null, assign_to_all: boolean }) => {
+        const { breakDuration, assign_to_all, ...rest } = newServiceData;
 
-        const { error } = await supabase.from('services').insert([serviceToInsert]);
+        const { data, error } = await supabase.rpc('create_service_and_assign_to_all', {
+            p_name: rest.name,
+            p_category_id: rest.category_id,
+            p_duration: rest.duration,
+            p_break_time: breakDuration,
+            p_price: rest.price,
+            p_required_professionals: rest.required_professionals,
+            p_assign_to_all: assign_to_all,
+        });
 
         if (error) {
             console.error('Error adding service:', error);
+            alert(`Error al añadir servicio: ${error.message}`); // Mostrar error al usuario
         } else {
             fetchServices();
             setIsNewModalOpen(false);

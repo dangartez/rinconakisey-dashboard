@@ -22,6 +22,7 @@ const NewServiceModal: React.FC<NewServiceModalProps> = ({ isOpen, onClose, onSa
     const [breakDuration, setBreakDuration] = useState(0);
     const [price, setPrice] = useState('');
     const [requiredProfessionals, setRequiredProfessionals] = useState(1);
+    const [assignToAll, setAssignToAll] = useState(true); // Nuevo estado para el switch, por defecto en ON
     const [error, setError] = useState('');
 
     useEffect(() => {
@@ -33,6 +34,7 @@ const NewServiceModal: React.FC<NewServiceModalProps> = ({ isOpen, onClose, onSa
                 setBreakDuration(0);
                 setPrice('');
                 setRequiredProfessionals(1);
+                setAssignToAll(true); // Resetear a ON por defecto
                 setError('');
             }, 200);
         }
@@ -45,9 +47,10 @@ const NewServiceModal: React.FC<NewServiceModalProps> = ({ isOpen, onClose, onSa
             duration !== '' ||
             breakDuration !== 0 ||
             price !== '' ||
-            requiredProfessionals !== 1
+            requiredProfessionals !== 1 ||
+            assignToAll !== true // Considerar si el switch ha cambiado de su valor por defecto
         );
-    }, [name, selectedCategory, duration, breakDuration, price, requiredProfessionals]);
+    }, [name, selectedCategory, duration, breakDuration, price, requiredProfessionals, assignToAll]);
 
     const handleCloseAttempt = () => {
         if (isDirty) {
@@ -78,6 +81,7 @@ const NewServiceModal: React.FC<NewServiceModalProps> = ({ isOpen, onClose, onSa
             breakDuration: Number(breakDuration),
             price: Number(price),
             required_professionals: Number(requiredProfessionals),
+            assign_to_all: assignToAll, // <-- Nuevo campo enviado
         } as any);
     };
 
@@ -141,6 +145,24 @@ const NewServiceModal: React.FC<NewServiceModalProps> = ({ isOpen, onClose, onSa
                                     <input type="number" id="required-professionals" value={requiredProfessionals} onChange={e => setRequiredProfessionals(Number(e.target.value))} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500" min="1" />
                                 </div>
                             </div>
+                            {/* Nuevo switch para asignar a todas las profesionales */}
+                            <label htmlFor="assign-to-all" className="flex items-center justify-between pt-4 cursor-pointer">
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-medium text-gray-700">Asignar a todas las profesionales</span>
+                                    <span className="text-xs text-gray-500">Por defecto, el servicio se asignará a todas las profesionales.</span>
+                                </div>
+                                <div className="relative">
+                                    <input 
+                                        type="checkbox" 
+                                        id="assign-to-all" 
+                                        className="sr-only" 
+                                        checked={assignToAll} 
+                                        onChange={() => setAssignToAll(!assignToAll)} 
+                                    />
+                                    <div className="block bg-gray-300 w-14 h-8 rounded-full"></div>
+                                    <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition ${assignToAll ? 'translate-x-full bg-pink-500' : ''}`}></div>
+                                </div>
+                            </label>
                             {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
                         </div>
                     </div>
