@@ -259,7 +259,7 @@ const TpvPage: React.FC = () => {
                 client_bono_to_use_id: item.use_bono_id, // Asegúrate que este campo se mapea correctamente
             }))
         };
-        const { data, error } = await supabase.rpc('create_sale_v9', { p_sale_data: saleData });
+        const { data, error } = await supabase.rpc('create_sale', { p_sale_data: saleData });
         if (error) { showErrorToast('Hubo un error al registrar la venta.'); console.error(error); }
         else { setIsPaymentModalOpen(false); setCompletedSaleData(data as CompletedSaleData); setIsNotePromptModalOpen(true); }
     };
