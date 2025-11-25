@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Professional, Service, WeeklySchedule } from '../../types';
+import { Professional, Service, WeeklySchedule, ScheduleOverride } from '../../types';
 import { UploadIcon } from '../icons/Icons';
 import { ScheduleManager } from './ScheduleManager';
 
@@ -7,6 +7,7 @@ import { ScheduleManager } from './ScheduleManager';
 type ProfessionalToSave = Omit<Professional, 'id' | 'creationDate' | 'avatar'> & {
     avatarFile?: File;
     schedules: WeeklySchedule;
+    overrides: ScheduleOverride[];
 };
 
 interface NewProfessionalModalProps {
@@ -39,6 +40,7 @@ const NewProfessionalModal: React.FC<NewProfessionalModalProps> = ({ isOpen, onC
     const [assignedServices, setAssignedServices] = useState<number[]>([]);
     const [color, setColor] = useState<Professional['color']>('pink');
     const [schedules, setSchedules] = useState<WeeklySchedule>({});
+    const [overrides, setOverrides] = useState<ScheduleOverride[]>([]);
     
     const [error, setError] = useState('');
     const [serviceSearch, setServiceSearch] = useState('');
@@ -57,6 +59,7 @@ const NewProfessionalModal: React.FC<NewProfessionalModalProps> = ({ isOpen, onC
                 setAssignedServices([]);
                 setColor('pink');
                 setSchedules({});
+                setOverrides([]);
                 setError('');
                 setServiceSearch('');
             }, 200);
@@ -72,7 +75,8 @@ const NewProfessionalModal: React.FC<NewProfessionalModalProps> = ({ isOpen, onC
             avatarFile !== undefined ||
             assignedServices.length > 0 ||
             color !== 'pink' ||
-            Object.keys(schedules).length > 0
+            Object.keys(schedules).length > 0 ||
+            overrides.length > 0
         );
     }, [name, email, phone, role, avatarFile, assignedServices, color, schedules]);
     
@@ -126,6 +130,7 @@ const NewProfessionalModal: React.FC<NewProfessionalModalProps> = ({ isOpen, onC
             assignedServices,
             avatarFile,
             schedules,
+            overrides,
         });
     };
 
@@ -182,8 +187,8 @@ const NewProfessionalModal: React.FC<NewProfessionalModalProps> = ({ isOpen, onC
                                     </div>
                                 </div>
                                 <div>
-                                    <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Nombre <span className="text-red-500">*</span></label>
-                                    <input type="text" id="name" value={name} onChange={e => setName(e.target.value)} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500" />
+                                    <label htmlFor="professional_name" className="block text-sm font-medium text-gray-700 mb-1">Nombre <span className="text-red-500">*</span></label>
+                                    <input type="text" id="professional_name" name="professional_name" value={name} onChange={e => setName(e.target.value)} className="w-full bg-white px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500" />
                                 </div>
                                  <div>
                                     <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email <span className="text-red-500">*</span></label>
@@ -280,8 +285,8 @@ const NewProfessionalModal: React.FC<NewProfessionalModalProps> = ({ isOpen, onC
                              <ScheduleManager 
                                 schedules={schedules}
                                 onSchedulesChange={setSchedules}
-                                overrides={[]}
-                                onOverridesChange={() => {}}
+                                overrides={overrides}
+                                onOverridesChange={setOverrides}
                              />
                         </div>
 

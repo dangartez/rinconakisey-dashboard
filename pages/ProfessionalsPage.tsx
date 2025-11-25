@@ -145,7 +145,7 @@ const ProfessionalsPage: React.FC = () => {
     }, [searchTerm, professionals]);
 
     const handleAddProfessional = async (newProfessionalData: ProfessionalToSave) => {
-        const { avatarFile, full_name: fullName, assignedServices, schedules, overrides, ...restData } = newProfessionalData;
+        const { avatarFile, name: fullName, assignedServices, schedules, overrides, ...restData } = newProfessionalData;
         
         let avatar_url: string | undefined = undefined;
 
@@ -210,7 +210,9 @@ const ProfessionalsPage: React.FC = () => {
                 end_time: shift.end_time,
             }))
         );
-        const overridesToInsert = overrides.map(({ id, ...rest }) => rest); // Remove temporary UI id
+        const overridesToInsert = overrides.length > 0 
+            ? overrides.map(({ id, ...rest }) => rest)
+            : [];
 
         const { error: scheduleError } = await supabase.rpc('update_professional_schedule', {
             p_professional_id: newProfessional.id,
@@ -226,6 +228,12 @@ const ProfessionalsPage: React.FC = () => {
         // 5. Refresh UI
         setIsNewModalOpen(false);
         fetchProfessionals();
+
+        // Inform if there was a schedule error, but don't prevent modal closure.
+        if (scheduleError) {
+            console.error('Error saving schedule:', scheduleError);
+            alert('El profesional fue creado, pero hubo un error al guardar su horario.');
+        }
     };
 
     const handleEditClick = (pro: Professional) => {
